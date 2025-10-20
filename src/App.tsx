@@ -1,10 +1,11 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Box, Text, useInput, useApp } from 'ink';
 import SelectInput from 'ink-select-input';
 import { useJobs } from './useJobs.js';
 import { useServices } from './serviceContext.js';
 import { SearchResult, StoredJob } from './types.js';
 import { SearchPane } from './SearchPane.js';
+import clipboard from 'clipboardy';
 
 type Screen =
   | { key: 'menu' }
@@ -297,6 +298,7 @@ interface JobDetailScreenProps {
 
 const JobDetailScreen: React.FC<JobDetailScreenProps> = ({ job, focus, onBack, onDelete }) => {
   const [isDeleting, setIsDeleting] = useState(false);
+  const [copyFeedback, setCopyFeedback] = useState<{ status: 'success' | 'error'; message: string } | undefined>();
 
   if (!job) {
     return (
@@ -306,6 +308,39 @@ const JobDetailScreen: React.FC<JobDetailScreenProps> = ({ job, focus, onBack, o
       </Box>
     );
   }
+
+  useEffect(() => {
+    if (!copyFeedback) {
+      return;
+    }
+    const timer = setTimeout(() => {
+      setCopyFeedback(undefined);
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, [copyFeedback]);
+
+  useInput(
+    (input) => {
+      if (input.toLowerCase() !== 'c') {
+        return;
+      }
+      const link = job.s3Url;
+      if (!link) {
+        setCopyFeedback({ status: 'error', message: 'No S3 link available yet.' });
+        return;
+      }
+      void (async () => {
+        try {
+          await clipboard.write(link);
+          setCopyFeedback({ status: 'success', message: 'Copied S3 link to clipboard.' });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'clipboard unavailable.';
+          setCopyFeedback({ status: 'error', message: `Failed to copy link: ${message}` });
+        }
+      })();
+    },
+    { isActive: focus }
+  );
 
   return (
     <Box flexDirection="column">
@@ -327,6 +362,11 @@ const JobDetailScreen: React.FC<JobDetailScreenProps> = ({ job, focus, onBack, o
           : 'Unknown'}
       </Text>
       <Text>S3: {job.s3Url ?? '—'}</Text>
+      {copyFeedback && (
+        <Text color={copyFeedback.status === 'success' ? 'green' : 'red'}>
+          {copyFeedback.message}
+        </Text>
+      )}
       {job.error && <Text color="red">Error: {job.error}</Text>}
       <Box marginTop={1}>
         <Text color="gray">Actions</Text>
@@ -358,6 +398,7 @@ const JobDetailScreen: React.FC<JobDetailScreenProps> = ({ job, focus, onBack, o
         }}
       />
       {isDeleting && <Text color="gray">Deleting…</Text>}
+      {job.s3Url && <Text color="gray">Press C to copy the S3 link.</Text>}
       <Text color="gray">Use ↑/↓ to choose, Enter to confirm.</Text>
       <Text color="gray">Use ← to go back to jobs.</Text>
     </Box>
