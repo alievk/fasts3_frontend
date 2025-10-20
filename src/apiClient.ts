@@ -1,129 +1,175 @@
-import { randomUUID } from 'node:crypto';
-import { ApiClient, CreateJobResponse, JobDetail, JobStatus, SearchResult } from './types.js';
+import { loadConfig } from './config.js';
+import { ApiClient, CreateJobResponse, JobDetail, SearchResult } from './types.js';
 
-interface MockJob {
-  jobId: string;
-  status: JobStatus;
-  progress: number;
-  updatedAt: string;
-  label?: string;
+const DEFAULT_REQUEST_TIMEOUT_MS = 10000;
+
+interface ServerSearchResult {
+  id: string;
+  title: string;
+  size_bytes: number;
+  seeders: number;
+  leechers: number;
   magnet: string;
-  error?: string | null;
-  s3Url?: string | null;
 }
 
-const MOCK_RESULTS: SearchResult[] = [
-  {
-    id: 'rutracker-111',
-    title: 'Ubuntu Noble 24.04 Desktop (64-bit)',
-    sizeBytes: 3700000000,
-    seeders: 1500,
-    leechers: 120,
-    magnet: 'magnet:?xt=urn:btih:ubuntu-noble-desktop'
-  },
-  {
-    id: 'rutracker-222',
-    title: 'Ubuntu Noble Server ISO',
-    sizeBytes: 1400000000,
-    seeders: 980,
-    leechers: 45,
-    magnet: 'magnet:?xt=urn:btih:ubuntu-noble-server'
-  },
-  {
-    id: 'rutracker-333',
-    title: 'Ubuntu Mate 24.04 x86_64',
-    sizeBytes: 3600000000,
-    seeders: 870,
-    leechers: 60,
-    magnet: 'magnet:?xt=urn:btih:ubuntu-mate'
-  },
-  {
-    id: 'rutracker-444',
-    title: 'Kubuntu Noble LTS (Official)',
-    sizeBytes: 4100000000,
-    seeders: 650,
-    leechers: 55,
-    magnet: 'magnet:?xt=urn:btih:kubuntu-noble'
-  },
-  {
-    id: 'rutracker-555',
-    title: 'Ubuntu Studio Noble LTS',
-    sizeBytes: 4800000000,
-    seeders: 320,
-    leechers: 20,
-    magnet: 'magnet:?xt=urn:btih:ubuntu-studio'
-  }
-];
+interface ServerCreateJobResponse {
+  job_id: string;
+  status: string;
+  created_at: string;
+}
 
-export class MockApiClient implements ApiClient {
-  private jobs = new Map<string, MockJob>();
+interface ServerJobDetail {
+  job_id: string;
+  status: string;
+  progress: number | null;
+  s3_url?: string | null;
+  updated_at: string;
+  label?: string | null;
+  error?: string | null;
+}
+
+class HttpApiClient implements ApiClient {
+  private readonly baseUrl: string;
+  private readonly authToken: string;
+
+  constructor(baseUrl: string, authToken: string) {
+    this.baseUrl = baseUrl.replace(/\/$/, '');
+    this.authToken = authToken;
+  }
 
   async search(query: string, limit = 5): Promise<SearchResult[]> {
-    const sanitized = query.trim().toLowerCase();
-    if (!sanitized) {
+    if (!query.trim()) {
       return [];
     }
 
-    return MOCK_RESULTS.filter((result) => result.title.toLowerCase().includes(sanitized)).slice(0, limit);
+    const params = new URLSearchParams({ query, limit: String(limit) });
+    const payload = await this.fetchJson<ServerSearchResult[]>(`/search?${params.toString()}`);
+    return payload.map((item) => ({
+      id: item.id,
+      title: item.title,
+      sizeBytes: item.size_bytes,
+      seeders: item.seeders,
+      leechers: item.leechers,
+      magnet: item.magnet
+    }));
   }
 
   async createJob(magnet: string, label?: string): Promise<CreateJobResponse> {
-    const jobId = `job-${randomUUID()}`;
-    const createdAt = new Date().toISOString();
-    this.jobs.set(jobId, {
-      jobId,
-      status: 'queued',
-      progress: 0,
-      updatedAt: createdAt,
-      label,
-      magnet,
-      s3Url: null,
-      error: null
+    const body = JSON.stringify({ magnet, label });
+    const payload = await this.fetchJson<ServerCreateJobResponse>('/jobs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body
     });
 
-    return { jobId, status: 'queued', createdAt };
+    return {
+      jobId: payload.job_id,
+      status: this.normalizeStatus(payload.status),
+      createdAt: payload.created_at
+    };
   }
 
   async getJob(jobId: string): Promise<JobDetail | undefined> {
-    const job = this.jobs.get(jobId);
-    if (!job) {
+    const result = await this.fetchJson<ServerJobDetail>(`/jobs/${encodeURIComponent(jobId)}`, {}, { allowNotFound: true });
+
+    if (!result) {
       return undefined;
     }
 
-    this.advanceJob(job);
-
     return {
-      jobId: job.jobId,
-      status: job.status,
-      progress: job.status === 'completed' ? 1 : job.progress,
-      updatedAt: job.updatedAt,
-      s3Url: job.s3Url ?? null,
-      label: job.label ?? null,
-      error: job.error ?? null
+      jobId: result.job_id,
+      status: this.normalizeStatus(result.status),
+      progress: result.progress ?? null,
+      s3Url: result.s3_url ?? null,
+      updatedAt: result.updated_at,
+      label: result.label ?? null,
+      error: result.error ?? null
     };
   }
 
   async deleteJob(jobId: string): Promise<void> {
-    this.jobs.delete(jobId);
+    await this.fetchJson(`/jobs/${encodeURIComponent(jobId)}`, { method: 'DELETE' }, { expectNoContent: true });
   }
 
-  private advanceJob(job: MockJob): void {
-    if (job.status === 'completed' || job.status === 'error') {
-      return;
+  private normalizeStatus(status: string): JobDetail['status'] {
+    switch (status) {
+      case 'queued':
+      case 'downloading':
+      case 'completed':
+      case 'error':
+        return status;
+      default:
+        throw new Error(`Unexpected job status received from API: ${status}`);
     }
+  }
 
-    const increment = Math.random() * 0.35;
-    job.progress = Math.min(1, job.progress + increment);
+  private async fetchJson<T>(
+    path: string,
+    init: RequestInit = {},
+    options: { allowNotFound?: boolean; expectNoContent?: boolean } = {}
+  ): Promise<T> {
+    const { allowNotFound = false, expectNoContent = false } = options;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), DEFAULT_REQUEST_TIMEOUT_MS);
 
-    if (job.progress >= 1) {
-      job.status = 'completed';
-      job.s3Url = `https://s3.mock/${job.jobId}/`;
-    } else if (job.progress >= 0.01) {
-      job.status = 'downloading';
+    try {
+      const response = await fetch(`${this.baseUrl}${path}`, {
+        ...init,
+        signal: controller.signal,
+        headers: this.buildHeaders(init.headers)
+      });
+
+      if (allowNotFound && response.status === 404) {
+        return undefined as T;
+      }
+
+      if (!response.ok) {
+        const message = await this.extractErrorMessage(response);
+        throw new Error(message ?? `Request failed with status ${response.status}`);
+      }
+
+      if (expectNoContent || response.status === 204) {
+        return undefined as T;
+      }
+
+      const text = await response.text();
+      if (!text) {
+        return undefined as T;
+      }
+
+      return JSON.parse(text) as T;
+    } catch (error) {
+      if ((error as Error).name === 'AbortError') {
+        throw new Error('Request timed out');
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeout);
     }
+  }
 
-    job.updatedAt = new Date().toISOString();
+  private buildHeaders(extra?: HeadersInit): HeadersInit {
+    const headers = new Headers(extra);
+    headers.set('Accept', 'application/json');
+    headers.set('Authorization', `Bearer ${this.authToken}`);
+    return headers;
+  }
+
+  private async extractErrorMessage(response: Response): Promise<string | undefined> {
+    try {
+      const data = await response.json();
+      if (data && typeof data === 'object' && 'error' in data && typeof (data as Record<string, unknown>).error === 'string') {
+        return (data as Record<string, string>).error;
+      }
+    } catch {
+      // ignore JSON parse errors and fall back to status text
+    }
+    return response.statusText || undefined;
   }
 }
 
-export const createApiClient = (): ApiClient => new MockApiClient();
+export const createApiClient = (): ApiClient => {
+  const config = loadConfig();
+  const token = config.apiToken ?? 'change-me';
+  return new HttpApiClient(config.apiBaseUrl, token);
+};

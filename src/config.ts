@@ -1,5 +1,8 @@
 import path from 'node:path';
+import dotenv from 'dotenv';
 import { Config } from './types.js';
+
+dotenv.config();
 
 const DEFAULT_API_BASE_URL = 'https://mock.torrent-service.local';
 const DEFAULT_POLLING_MS = 3000;
