@@ -13,7 +13,7 @@ export interface JobDetail {
   jobId: string;
   status: JobStatus;
   progress: number | null;
-  s3Url?: string | null;
+  sizeBytes?: number | null;
   updatedAt: string;
   label?: string | null;
   error?: string | null;
@@ -33,6 +33,15 @@ export interface StoredJob {
   progress: number | null;
   s3Url?: string | null;
   error?: string | null;
+  sizeBytes?: number | null;
+}
+
+export interface JobPresignResponse {
+  jobId: string;
+  bucket: string;
+  key: string;
+  s3Url: string;
+  expiresIn: number;
 }
 
 export interface JobStoreData {
@@ -58,4 +67,5 @@ export interface ApiClient {
   getJob(jobId: string): Promise<JobDetail | undefined>;
   deleteJob(jobId: string): Promise<void>;
   health(): Promise<HealthResponse>;
+  getJobPresignedLink(jobId: string): Promise<JobPresignResponse | undefined>;
 }

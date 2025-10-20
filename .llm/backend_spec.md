@@ -83,7 +83,6 @@ Assume deployments under `https://<host>/api`. Paths below use this base.
   "job_id": "job-1f6bf62b-2f6c-4a72-b7c8-4df5971e2b5b",
   "status": "downloading",
   "progress": 0.42,
-  "s3_url": null,
   "updated_at": "2025-10-13T15:24:01.591Z",
   "error": null
 }
@@ -91,13 +90,32 @@ Assume deployments under `https://<host>/api`. Paths below use this base.
 
 Field notes:
 - `progress` in `[0,1]`, may be `null` if unknown.
-- `s3_url` populated only when `status == "completed"`. Must be an HTTPS link to the job folder.
+- No download link is returned; clients must call `/api/jobs/{job_id}/presign_link` to fetch a presigned URL once the job is completed.
 - `error` string recommended when `status == "error"`.
 
 Error cases:
 - `404` when job_id is unknown or expired (CLI will treat as orphan and remove locally).
 
-### 5. Delete Job
+### 5. Get Job Presigned Link
+`GET /api/jobs/{job_id}/presign_link`
+
+Purpose: obtain an HTTPS presigned link for the first uploaded torrent file. Returns `404` if the job is unfinished or stored locally.
+
+**Response 200:**
+```json
+{
+  "job_id": "job-1f6bf62b-2f6c-4a72-b7c8-4df5971e2b5b",
+  "bucket": "torrent-downloads",
+  "key": "jobs/job-1f6bf62b/files/000_readme.txt",
+  "s3_url": "https://s3.amazonaws.com/torrent-downloads/jobs/...",
+  "expires_in": 900
+}
+```
+
+- `expires_in` matches the server-side presign window (seconds).
+- Return `503` with error payload when presigning is disabled or fails.
+
+### 6. Delete Job
 `DELETE /api/jobs/{job_id}`
 
 Purpose: allow clients to cancel jobs and clean up storage.
@@ -114,7 +132,7 @@ Purpose: allow clients to cancel jobs and clean up storage.
 
 ## Behavioural Expectations
 - Backend should persist job history at least long enough for clients to reconnect and sync status.
-- When a download completes, upload all torrent files to S3, then respond with the base folder URL in `s3_url`.
+- When a download completes, upload all torrent files to S3, then expose the presign endpoint for clients that need a direct download link.
 - Downloads should transition through `queued -> downloading -> completed` (or `error`). Progress should increase monotonically when known.
 - Searching and job management should be idempotent; repeating identical requests should not create duplicates.
 

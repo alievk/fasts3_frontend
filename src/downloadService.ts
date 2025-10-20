@@ -16,11 +16,18 @@ const mapDetailToStored = (detail: JobDetail, existing?: StoredJob): StoredJob =
   lastKnownStatus: detail.status,
   lastSyncedAt: detail.updatedAt,
   progress: detail.progress ?? existing?.progress ?? null,
-  s3Url: detail.s3Url ?? existing?.s3Url ?? null,
-  error: detail.error ?? null
+  s3Url: existing?.s3Url ?? null,
+  error: detail.error ?? null,
+  sizeBytes: detail.sizeBytes ?? existing?.sizeBytes ?? null
 });
 
-const newStoredJob = (jobId: string, label: string | undefined, status: JobStatus, createdAt: string): StoredJob => ({
+const newStoredJob = (
+  jobId: string,
+  label: string | undefined,
+  status: JobStatus,
+  createdAt: string,
+  sizeBytes: number | undefined
+): StoredJob => ({
   jobId,
   label: label ?? null,
   createdAt,
@@ -28,7 +35,8 @@ const newStoredJob = (jobId: string, label: string | undefined, status: JobStatu
   lastSyncedAt: createdAt,
   progress: status === 'completed' ? 1 : 0,
   s3Url: null,
-  error: null
+  error: null,
+  sizeBytes: sizeBytes ?? null
 });
 
 export class DownloadService extends EventEmitter {
@@ -84,7 +92,7 @@ export class DownloadService extends EventEmitter {
   async startDownload(result: SearchResult): Promise<StoredJob> {
     try {
       const response = await this.apiClient.createJob(result.magnet, result.title);
-      const stored = newStoredJob(response.jobId, result.title, response.status, response.createdAt);
+      const stored = newStoredJob(response.jobId, result.title, response.status, response.createdAt, result.sizeBytes);
       this.jobs.set(stored.jobId, stored);
       await this.jobStore.upsert(stored);
       this.emit('jobUpdated', stored);
@@ -114,7 +122,19 @@ export class DownloadService extends EventEmitter {
       }
 
       const existing = this.jobs.get(jobId);
-      const updated = mapDetailToStored(detail, existing ?? undefined);
+      let updated = mapDetailToStored(detail, existing ?? undefined);
+
+      if (detail.status === 'completed' && !updated.s3Url) {
+        try {
+          const link = await this.apiClient.getJobPresignedLink(jobId);
+          if (link?.s3Url) {
+            updated = { ...updated, s3Url: link.s3Url };
+          }
+        } catch (error) {
+          this.emit('error', error instanceof Error ? error : new Error(String(error)));
+        }
+      }
+
       this.jobs.set(jobId, updated);
       await this.jobStore.upsert(updated);
       this.emit('jobUpdated', updated);

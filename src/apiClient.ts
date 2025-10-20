@@ -1,5 +1,5 @@
 import { loadConfig } from './config.js';
-import { ApiClient, CreateJobResponse, HealthResponse, JobDetail, SearchResult } from './types.js';
+import { ApiClient, CreateJobResponse, HealthResponse, JobDetail, JobPresignResponse, SearchResult } from './types.js';
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 10000;
 
@@ -27,10 +27,18 @@ interface ServerJobDetail {
   job_id: string;
   status: string;
   progress: number | null;
-  s3_url?: string | null;
+  size_bytes?: number | null;
   updated_at: string;
   label?: string | null;
   error?: string | null;
+}
+
+interface ServerPresignResponse {
+  job_id: string;
+  bucket: string;
+  key: string;
+  s3_url: string;
+  expires_in: number;
 }
 
 class HttpApiClient implements ApiClient {
@@ -85,7 +93,7 @@ class HttpApiClient implements ApiClient {
       jobId: result.job_id,
       status: this.normalizeStatus(result.status),
       progress: result.progress ?? null,
-      s3Url: result.s3_url ?? null,
+      sizeBytes: result.size_bytes ?? null,
       updatedAt: result.updated_at,
       label: result.label ?? null,
       error: result.error ?? null
@@ -101,6 +109,24 @@ class HttpApiClient implements ApiClient {
     return {
       status: payload.status,
       version: payload.version
+    };
+  }
+
+  async getJobPresignedLink(jobId: string): Promise<JobPresignResponse | undefined> {
+    const payload = await this.fetchJson<ServerPresignResponse>(
+      `/jobs/${encodeURIComponent(jobId)}/presign_link`,
+      {},
+      { allowNotFound: true }
+    );
+    if (!payload) {
+      return undefined;
+    }
+    return {
+      jobId: payload.job_id,
+      bucket: payload.bucket,
+      key: payload.key,
+      s3Url: payload.s3_url,
+      expiresIn: payload.expires_in
     };
   }
 
