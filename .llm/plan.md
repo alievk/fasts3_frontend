@@ -69,15 +69,15 @@
 2. `apiClient.ts`
    - Thin wrapper on `fetch` with JSON parsing, error normalization, retry on 5xx.
    - Expose methods: `search(query)`, `createJob(magnet, label)`, `getJob(jobId)`, `deleteJob(jobId)`.
-   - Optional `listJobs(since)` helper can be added when the backend ships the bulk status endpoint; the mock currently exercises per-job fetches to keep the surface minimal.
+   - Optional `listJobs(since)` helper can be added when the backend ships the bulk status endpoint; the CLI currently exercises per-job fetches to keep the surface minimal.
 3. `jobStore.ts`
-   - Manage persisted job metadata in `~/.config/torrent-cli/jobs.json` (default) or project `.cache`.
+   - Manage persisted job metadata in `.cache/torrent-cli/jobs.json` by default (override with `TORRENT_CLI_STATE_PATH`).
    - APIs: `loadJobs()`, `saveJobs(jobs)`, `upsert(job)`, `remove(jobId)`.
 4. `downloadService.ts`
-   - Orchestrate workflows: `search`, `startDownload`, `syncJob(jobId)`, `syncAll()`, `forgetOrphans()`.
+   - Orchestrate workflows: `search`, `startDownload`, `syncJob(jobId)`, `syncAll()`, implicit orphan cleanup when `syncJob` sees a 404.
    - Emits domain events (e.g., `jobUpdated`, `jobRemoved`) consumable by CLI and other frontends.
 5. `poller.ts`
-   - Poll known jobs on interval; uses `downloadService.syncAll()`, debounces concurrent requests.
+   - Poll known jobs on a fixed interval; uses `downloadService.syncAll()` via `setInterval`.
 6. `types.ts`
    - Shared TypeScript interfaces/enums for API payloads and domain models.
 
@@ -90,12 +90,10 @@
 ### Component Tree
 - `<App>`: top-level orchestrator; loads config, initializes services, and provides context.
 - `<SearchPane>`: input box + results list; leverages `downloadService.search`.
-- `<JobTracker>`: displays active/past jobs; listens to poller events.
-- `<JobRow>`: renders status, progress bar, and `s3_url` when complete; includes action to open link or clear job.
-- `<StatusBar>`: shows last sync time, API latency, and errors.
+- `<JobTracker>`: displays active/past jobs inline; listens to poller events and handles deletion via keyboard shortcut.
 
 ### Hooks/Context
-- `useServiceContext` exposing `downloadService`, `jobStore`, `poller`.
+- `useServiceContext` exposing `config`, `downloadService`, `poller`.
 - `useJobs()` hook that converts event stream to Ink state (subscribes/unsubscribes on mount).
 - `useSearch()` hook managing query string, pending state, and result list.
 
@@ -126,8 +124,8 @@
 
 ## Error Handling & Resilience
 - Distinguish network errors vs API validation vs backend job errors.
-- Bubble errors to Ink via toast line in `StatusBar`; keep UI responsive.
-- Backoff strategy in poller after consecutive failures.
+- Surface errors in the main UI message area while keeping input responsive.
+- Poller currently runs at a fixed cadence; evaluate backoff once backend limits require it.
 - CLI should handle backend returning unknown status fields gracefully by logging and ignoring.
 
 ## Extensibility Notes

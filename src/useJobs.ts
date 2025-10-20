@@ -40,10 +40,16 @@ export const useJobs = (): JobsHookState => {
     downloadService.on('jobRemoved', handleRemove);
     downloadService.on('error', handleError);
 
-    void downloadService.init().then(() => {
-      void downloadService.syncAll();
+    void (async () => {
+      await downloadService.init();
+      try {
+        await downloadService.checkHealth();
+      } catch {
+        // `checkHealth` emits the error; continue to allow manual retries.
+      }
+      await downloadService.syncAll();
       poller.start();
-    });
+    })();
 
     return () => {
       poller.stop();

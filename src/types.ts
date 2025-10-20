@@ -19,6 +19,11 @@ export interface JobDetail {
   error?: string | null;
 }
 
+export interface HealthResponse {
+  status: string;
+  version?: string;
+}
+
 export interface StoredJob {
   jobId: string;
   label?: string | null;
@@ -52,4 +57,5 @@ export interface ApiClient {
   createJob(magnet: string, label?: string): Promise<CreateJobResponse>;
   getJob(jobId: string): Promise<JobDetail | undefined>;
   deleteJob(jobId: string): Promise<void>;
+  health(): Promise<HealthResponse>;
 }

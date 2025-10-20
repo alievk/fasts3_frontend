@@ -95,6 +95,16 @@ export class DownloadService extends EventEmitter {
     }
   }
 
+  async checkHealth(): Promise<void> {
+    try {
+      await this.apiClient.health();
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      this.emit('error', err);
+      throw err;
+    }
+  }
+
   async syncJob(jobId: string): Promise<void> {
     try {
       const detail = await this.apiClient.getJob(jobId);

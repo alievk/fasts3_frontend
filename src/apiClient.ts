@@ -1,5 +1,5 @@
 import { loadConfig } from './config.js';
-import { ApiClient, CreateJobResponse, JobDetail, SearchResult } from './types.js';
+import { ApiClient, CreateJobResponse, HealthResponse, JobDetail, SearchResult } from './types.js';
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 10000;
 
@@ -16,6 +16,11 @@ interface ServerCreateJobResponse {
   job_id: string;
   status: string;
   created_at: string;
+}
+
+interface ServerHealthResponse {
+  status: string;
+  version?: string;
 }
 
 interface ServerJobDetail {
@@ -89,6 +94,14 @@ class HttpApiClient implements ApiClient {
 
   async deleteJob(jobId: string): Promise<void> {
     await this.fetchJson(`/jobs/${encodeURIComponent(jobId)}`, { method: 'DELETE' }, { expectNoContent: true });
+  }
+
+  async health(): Promise<HealthResponse> {
+    const payload = await this.fetchJson<ServerHealthResponse>('/health');
+    return {
+      status: payload.status,
+      version: payload.version
+    };
   }
 
   private normalizeStatus(status: string): JobDetail['status'] {
