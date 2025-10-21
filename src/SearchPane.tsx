@@ -23,7 +23,8 @@ export const SearchPane: React.FC<SearchPaneProps> = ({ onSelect, disabled = fal
     () =>
       results.map((result) => ({
         label: `${result.title} • ${(result.sizeBytes / (1024 * 1024 * 1024)).toFixed(2)} GB • ${result.seeders} seeders`,
-        value: result
+        value: result,
+        key: result.id
       })),
     [results]
   );
