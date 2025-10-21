@@ -122,7 +122,7 @@ const formatJobDetail = (job: StoredJob): string => {
 };
 
 const normalizeTitle = (title: string): string => {
-  return title.length <= 48 ? title : `${title.slice(0, 45)}...`;
+  return title;
 };
 
 const buildSearchKeyboard = (results: SearchResult[]) => {
