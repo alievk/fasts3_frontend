@@ -1,4 +1,4 @@
-# Torrent CLI
+# Frontend for torrent downloader
 
 Minimal Ink-based CLI that follows the structure from `.llm/plan.md` while calling the REST API described in `.llm/backend_spec.md`. Built with Ink 6 / React 18.
 
