@@ -144,7 +144,11 @@ export class DownloadService extends EventEmitter {
   }
 
   async syncAll(): Promise<void> {
-    await Promise.all(this.getJobs().map((job) => this.syncJob(job.jobId)));
+    const activeJobs = this.getJobs().filter((job) => job.lastKnownStatus === 'queued' || job.lastKnownStatus === 'downloading');
+    if (activeJobs.length === 0) {
+      return;
+    }
+    await Promise.all(activeJobs.map((job) => this.syncJob(job.jobId)));
   }
 
   async remove(jobId: string): Promise<void> {
