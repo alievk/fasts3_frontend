@@ -10,10 +10,26 @@ Minimal Ink-based CLI that follows the structure from `.llm/plan.md` while calli
    ```
 2. Run the CLI in watch mode:
    ```bash
-   npm run dev
+   npm run cli
    ```
 
 > **Note:** Configure `TORRENT_API_URL` (defaults to `https://mock.torrent-service.local`) and `TORRENT_API_TOKEN` for authenticated requests. Jobs persist locally under `.cache/torrent-cli/jobs.json` (override with `TORRENT_CLI_STATE_PATH`). Ink 6 requires Node.js 20+.
+
+## Telegram Bot
+
+1. Export your bot token along with the existing API variables:
+   ```bash
+   export TORRENT_TELEGRAM_BOT_TOKEN=<bot-token>
+   ```
+2. Launch the bot:
+   ```bash
+   npm run bot
+   ```
+
+The bot reuses the shared service layer, so job state stays in sync with the CLI (same cache path, polling, and backend configuration).
+
+- `/search <query>` — search torrents and start downloads from inline results.
+- `/jobs` — list saved jobs with buttons to view details or delete them.
 
 ## Current Behaviour
 

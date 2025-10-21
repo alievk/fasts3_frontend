@@ -300,15 +300,6 @@ const JobDetailScreen: React.FC<JobDetailScreenProps> = ({ job, focus, onBack, o
   const [isDeleting, setIsDeleting] = useState(false);
   const [copyFeedback, setCopyFeedback] = useState<{ status: 'success' | 'error'; message: string } | undefined>();
 
-  if (!job) {
-    return (
-      <Box flexDirection="column">
-        <Text color="red">Job not found.</Text>
-        <Text color="gray">Press ← to return to jobs.</Text>
-      </Box>
-    );
-  }
-
   useEffect(() => {
     if (!copyFeedback) {
       return;
@@ -321,6 +312,9 @@ const JobDetailScreen: React.FC<JobDetailScreenProps> = ({ job, focus, onBack, o
 
   useInput(
     (input) => {
+      if (!job) {
+        return;
+      }
       if (input.toLowerCase() !== 'c') {
         return;
       }
@@ -341,6 +335,15 @@ const JobDetailScreen: React.FC<JobDetailScreenProps> = ({ job, focus, onBack, o
     },
     { isActive: focus }
   );
+
+  if (!job) {
+    return (
+      <Box flexDirection="column">
+        <Text color="red">Job not found.</Text>
+        <Text color="gray">Press ← to return to jobs.</Text>
+      </Box>
+    );
+  }
 
   return (
     <Box flexDirection="column">
