@@ -76,6 +76,14 @@ const isQueryTooOldError = (error: unknown): boolean => {
   return response?.error_code === 400 && typeof response.description === 'string' && response.description.includes('query is too old');
 };
 
+const isMessageUnchangedError = (error: unknown): boolean => {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+  const response = (error as { response?: { error_code?: number; description?: string } }).response;
+  return response?.error_code === 400 && typeof response.description === 'string' && response.description.includes('message is not modified');
+};
+
 const safeAnswerCallback = async (
   ctx: Context,
   ...args: Parameters<Context['answerCbQuery']>
@@ -84,6 +92,19 @@ const safeAnswerCallback = async (
     await ctx.answerCbQuery(...args);
   } catch (error) {
     if (!isQueryTooOldError(error)) {
+      throw error;
+    }
+  }
+};
+
+const safeEditMessageText = async (
+  ctx: Context,
+  ...args: Parameters<Context['editMessageText']>
+): Promise<void> => {
+  try {
+    await ctx.editMessageText(...args);
+  } catch (error) {
+    if (!isMessageUnchangedError(error)) {
       throw error;
     }
   }
@@ -101,7 +122,23 @@ const formatSize = (size: number | null | undefined): string => {
   return `${gigabytes.toFixed(2)} GiB`;
 };
 
+const formatDateTime = (primary: string | Date | null | undefined, fallback?: Date): string => {
+  const value = primary ?? fallback ?? null;
+  if (!value) {
+    return 'unknown';
+  }
+  const date = typeof value === 'string' ? new Date(value) : value;
+  if (Number.isNaN(date.getTime())) {
+    return 'unknown';
+  }
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'medium'
+  }).format(date);
+};
+
 const formatJobDetail = (job: StoredJob): string => {
+  const lastUpdated = formatDateTime(job.lastSyncedAt ?? null);
   const lines = [
     `Title: ${job.label ?? job.jobId}`,
     `ID: ${job.jobId}`,
@@ -116,7 +153,7 @@ const formatJobDetail = (job: StoredJob): string => {
     `Size: ${formatSize(job.sizeBytes ?? null)}`,
     job.s3Url ? `S3 link: ${job.s3Url}` : undefined,
     job.error ? `Error: ${job.error}` : undefined,
-    `Last sync: ${job.lastSyncedAt}`
+    `Last update: ${lastUpdated}`
   ];
   return lines.filter(Boolean).join('\n');
 };
@@ -274,10 +311,10 @@ bot.action(/^refresh:(.+)$/, async (ctx) => {
   await downloadService.syncJob(jobId);
   const job = trackedJobs.get(jobId) ?? downloadService.getJobs().find((item) => item.jobId === jobId);
   if (!job) {
-    await ctx.editMessageText(`Job ${jobId} not found.`);
+    await safeEditMessageText(ctx, `Job ${jobId} not found.`);
     return;
   }
-  await ctx.editMessageText(formatJobDetail(job), buildJobActionsKeyboard(job));
+  await safeEditMessageText(ctx, formatJobDetail(job), buildJobActionsKeyboard(job));
 });
 
 bot.action(/^delete:(.+)$/, async (ctx) => {
@@ -294,7 +331,7 @@ bot.action(/^delete:(.+)$/, async (ctx) => {
   removalSuppressions.set(jobId, chatId);
   await downloadService.remove(jobId);
   try {
-    await ctx.editMessageText(`Job removed: ${existing?.label ?? jobId}`);
+    await safeEditMessageText(ctx, `Job removed: ${existing?.label ?? jobId}`);
   } catch (error) {
     console.error('Failed to edit job message after deletion:', error);
   }
