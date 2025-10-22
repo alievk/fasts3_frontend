@@ -43,7 +43,11 @@ export class DownloadService extends EventEmitter {
   private jobs = new Map<string, StoredJob>();
   private initialized = false;
 
-  constructor(private readonly apiClient: ApiClient, private readonly jobStore: JobStore) {
+  constructor(
+    private readonly apiClient: ApiClient,
+    private readonly jobStore: JobStore,
+    private readonly searchLimit: number
+  ) {
     super();
   }
 
@@ -86,7 +90,7 @@ export class DownloadService extends EventEmitter {
   }
 
   async search(query: string): Promise<SearchResult[]> {
-    return this.apiClient.search(query, 5);
+    return this.apiClient.search(query, this.searchLimit);
   }
 
   async startDownload(result: SearchResult): Promise<StoredJob> {

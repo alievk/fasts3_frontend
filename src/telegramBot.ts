@@ -17,12 +17,20 @@ if (!botToken) {
 const config = loadConfig();
 const apiClient = createApiClient();
 const jobStore = new JobStore(config.statePath);
-const downloadService = new DownloadService(apiClient, jobStore);
+const downloadService = new DownloadService(apiClient, jobStore, config.searchLimit);
 const poller = new Poller(downloadService, config.pollingIntervalMs);
 const bot = new Telegraf(botToken);
 
 const activeChats = new Set<number>();
-const searchSessions = new Map<number, SearchResult[]>();
+
+type SearchSession = {
+  results: SearchResult[];
+  page: number;
+};
+
+const searchPageSize = config.searchPageSize;
+
+const searchSessions = new Map<number, SearchSession>();
 const trackedJobs = new Map<string, StoredJob>();
 const removalSuppressions = new Map<string, number>();
 
@@ -162,10 +170,39 @@ const normalizeTitle = (title: string): string => {
   return title;
 };
 
-const buildSearchKeyboard = (results: SearchResult[]) => {
-  return Markup.inlineKeyboard(
-    results.map((_result, index) => [Markup.button.callback(`Download ${index + 1}`, `start:${index}`)])
-  );
+const buildSearchPage = (results: SearchResult[], requestedPage: number) => {
+  const totalPages = Math.max(1, Math.ceil(results.length / searchPageSize));
+  const page = Math.min(Math.max(requestedPage, 0), totalPages - 1);
+  const startIndex = page * searchPageSize;
+  const pageResults = results.slice(startIndex, startIndex + searchPageSize);
+  const lines = pageResults.map((result, offset) => {
+    const index = startIndex + offset;
+    return [
+      `${index + 1}. ${normalizeTitle(result.title)}`,
+      `Size: ${formatSize(result.sizeBytes)}`,
+      `Seeders: ${result.seeders} • Leechers: ${result.leechers}`
+    ].join('\n');
+  });
+  const rows: ReturnType<typeof Markup.button.callback>[][] = pageResults.map((_result, offset) => [
+    Markup.button.callback(`Download ${startIndex + offset + 1}`, `start:${startIndex + offset}`)
+  ]);
+  const navButtons: ReturnType<typeof Markup.button.callback>[] = [];
+  if (page > 0) {
+    navButtons.push(Markup.button.callback('← Previous', `page:${page - 1}`));
+  }
+  if (page < totalPages - 1) {
+    navButtons.push(Markup.button.callback('Next →', `page:${page + 1}`));
+  }
+  if (navButtons.length > 0) {
+    rows.push(navButtons);
+  }
+  const text = `${lines.join('\n\n')}\n\nPage ${page + 1}/${totalPages}`;
+  return {
+    page,
+    totalPages,
+    text,
+    keyboard: Markup.inlineKeyboard(rows)
+  };
 };
 
 const buildJobActionsKeyboard = (job: StoredJob) => {
@@ -233,15 +270,9 @@ bot.command('search', async (ctx) => {
       await ctx.reply(`No results for "${query}"`);
       return;
     }
-    searchSessions.set(chatId, results);
-    const lines = results.map((result, index) => {
-      return [
-        `${index + 1}. ${normalizeTitle(result.title)}`,
-        `Size: ${formatSize(result.sizeBytes)}`,
-        `Seeders: ${result.seeders} • Leechers: ${result.leechers}`
-      ].join('\n');
-    });
-    await ctx.reply(lines.join('\n\n'), buildSearchKeyboard(results));
+    const pageInfo = buildSearchPage(results, 0);
+    searchSessions.set(chatId, { results, page: pageInfo.page });
+    await ctx.reply(pageInfo.text, pageInfo.keyboard);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     await ctx.reply(`Search failed: ${message}`);
@@ -264,7 +295,8 @@ bot.action(/^start:(\d+)$/, async (ctx) => {
     await safeAnswerCallback(ctx);
     return;
   }
-  const results = searchSessions.get(chatId);
+  const session = searchSessions.get(chatId);
+  const results = session?.results;
   if (!results || Number.isNaN(index) || index < 0 || index >= results.length) {
     await safeAnswerCallback(ctx, 'Search results expired. Run /search again.');
     return;
@@ -280,6 +312,26 @@ bot.action(/^start:(\d+)$/, async (ctx) => {
     await safeAnswerCallback(ctx, 'Failed to start download', { show_alert: true });
     await ctx.reply(`Failed to start download: ${message}`);
   }
+});
+
+bot.action(/^page:(\d+)$/, async (ctx) => {
+  const match = ctx.match as RegExpExecArray | undefined;
+  const rawPage = match?.[1];
+  const requestedPage = Number.parseInt(rawPage ?? '', 10);
+  const chatId = ctx.chat?.id;
+  if (!chatId || Number.isNaN(requestedPage)) {
+    await safeAnswerCallback(ctx);
+    return;
+  }
+  const session = searchSessions.get(chatId);
+  if (!session) {
+    await safeAnswerCallback(ctx, 'Search results expired. Run /search again.');
+    return;
+  }
+  const pageInfo = buildSearchPage(session.results, requestedPage);
+  session.page = pageInfo.page;
+  await safeAnswerCallback(ctx);
+  await safeEditMessageText(ctx, pageInfo.text, pageInfo.keyboard);
 });
 
 bot.action(/^job:(.+)$/, async (ctx) => {

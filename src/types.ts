@@ -59,6 +59,8 @@ export interface Config {
   apiToken?: string;
   pollingIntervalMs: number;
   statePath: string;
+  searchLimit: number;
+  searchPageSize: number;
 }
 
 export interface ApiClient {
