@@ -6,6 +6,7 @@ import { JobStore } from './jobStore.js';
 import { DownloadService } from './downloadService.js';
 import { Poller } from './poller.js';
 import { SearchResult, StoredJob } from './types.js';
+import { createSearchPipeline } from './searchPipeline.js';
 
 const botToken = process.env.TORRENT_TELEGRAM_BOT_TOKEN;
 
@@ -17,7 +18,8 @@ if (!botToken) {
 const config = loadConfig();
 const apiClient = createApiClient();
 const jobStore = new JobStore(config.statePath);
-const downloadService = new DownloadService(apiClient, jobStore, config.searchLimit);
+const searchPipeline = createSearchPipeline(config);
+const downloadService = new DownloadService(apiClient, jobStore, config.searchLimit, searchPipeline);
 const poller = new Poller(downloadService, config.pollingIntervalMs);
 const bot = new Telegraf(botToken);
 

@@ -1,5 +1,5 @@
 import EventEmitter from 'node:events';
-import { ApiClient, JobDetail, JobStatus, SearchResult, StoredJob } from './types.js';
+import { ApiClient, JobDetail, JobStatus, SearchResult, SearchResultPipeline, StoredJob } from './types.js';
 import { JobStore } from './jobStore.js';
 
 type DownloadServiceEvents = {
@@ -46,7 +46,8 @@ export class DownloadService extends EventEmitter {
   constructor(
     private readonly apiClient: ApiClient,
     private readonly jobStore: JobStore,
-    private readonly searchLimit: number
+    private readonly searchLimit: number,
+    private readonly searchPipeline: SearchResultPipeline = []
   ) {
     super();
   }
@@ -90,7 +91,11 @@ export class DownloadService extends EventEmitter {
   }
 
   async search(query: string): Promise<SearchResult[]> {
-    return this.apiClient.search(query, this.searchLimit);
+    const results = await this.apiClient.search(query, this.searchLimit);
+    if (this.searchPipeline.length === 0) {
+      return results;
+    }
+    return this.applySearchPipeline(results);
   }
 
   async startDownload(result: SearchResult): Promise<StoredJob> {
@@ -172,5 +177,17 @@ export class DownloadService extends EventEmitter {
     this.jobs.delete(jobId);
     await this.jobStore.remove(jobId);
     this.emit('jobRemoved', jobId);
+  }
+
+  private async applySearchPipeline(results: SearchResult[]): Promise<SearchResult[]> {
+    let current = results;
+    for (const stage of this.searchPipeline) {
+      const next = await stage(current);
+      if (!Array.isArray(next)) {
+        throw new Error('Search pipeline stage must return an array of results');
+      }
+      current = next;
+    }
+    return current;
   }
 }

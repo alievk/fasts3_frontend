@@ -8,12 +8,25 @@ const DEFAULT_API_BASE_URL = 'https://mock.torrent-service.local';
 const DEFAULT_POLLING_MS = 3000;
 const DEFAULT_SEARCH_LIMIT = 5;
 const DEFAULT_PAGE_SIZE = 5;
+const DEFAULT_MIN_SIZE_GIB = 0.6;
+const DEFAULT_MAX_SIZE_GIB = 5;
 
 const parsePositiveInt = (value: string | undefined): number | undefined => {
   if (value === undefined) {
     return undefined;
   }
   const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return undefined;
+  }
+  return parsed;
+};
+
+const parsePositiveFloat = (value: string | undefined): number | undefined => {
+  if (value === undefined) {
+    return undefined;
+  }
+  const parsed = Number.parseFloat(value);
   if (!Number.isFinite(parsed) || parsed <= 0) {
     return undefined;
   }
@@ -38,6 +51,12 @@ export const loadConfig = (): Config => {
   const parsedPageSize = parsePositiveInt(process.env.TORRENT_TELEGRAM_BOT_PAGE_SIZE);
   const basePageSize = parsedPageSize ?? DEFAULT_PAGE_SIZE;
   const searchPageSize = Math.max(1, Math.min(searchLimit, basePageSize));
+  const minSizeGiB = parsePositiveFloat(process.env.TORRENT_SEARCH_MIN_SIZE_GIB) ?? DEFAULT_MIN_SIZE_GIB;
+  const maxSizeGiB = parsePositiveFloat(process.env.TORRENT_SEARCH_MAX_SIZE_GIB);
+  const resolvedMaxGiB = maxSizeGiB ?? DEFAULT_MAX_SIZE_GIB;
+  const resolvedMinGiB = Math.min(minSizeGiB, resolvedMaxGiB);
+  const searchMinSizeBytes = Math.floor(resolvedMinGiB * 1024 * 1024 * 1024);
+  const searchMaxSizeBytes = Math.floor(resolvedMaxGiB * 1024 * 1024 * 1024);
 
   return {
     apiBaseUrl: process.env.TORRENT_API_URL ?? DEFAULT_API_BASE_URL,
@@ -45,6 +64,8 @@ export const loadConfig = (): Config => {
     pollingIntervalMs,
     statePath: resolveStatePath(),
     searchLimit,
-    searchPageSize
+    searchPageSize,
+    searchMinSizeBytes,
+    searchMaxSizeBytes
   };
 };

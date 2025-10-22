@@ -9,6 +9,10 @@ export interface SearchResult {
   magnet: string;
 }
 
+export type SearchResultStage = (results: SearchResult[]) => SearchResult[] | Promise<SearchResult[]>;
+
+export type SearchResultPipeline = SearchResultStage[];
+
 export interface JobDetail {
   jobId: string;
   status: JobStatus;
@@ -61,6 +65,8 @@ export interface Config {
   statePath: string;
   searchLimit: number;
   searchPageSize: number;
+  searchMinSizeBytes?: number;
+  searchMaxSizeBytes?: number;
 }
 
 export interface ApiClient {
