@@ -80,6 +80,7 @@
   }
   ```
 - `TORRENT_CLI_STATE_PATH` overrides the default location. Writes are atomic and directories are created on demand.
+- **Critical:** JSON persistence will not scale beyond small single-user workloads. Plan a migration to a proper database (SQLite/Postgres/Redis) with concurrency control, indexing, and retention policies before onboarding high user volumes.
 
 ## Error Handling & Resilience
 - Requests time out after 10s; aborted calls surface as user-visible errors.

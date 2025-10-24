@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { StoredJob, JobStoreData } from './types.js';
 
 const defaultData = (): JobStoreData => ({ jobs: {} });
@@ -10,7 +11,8 @@ const ensureParentDir = async (filePath: string): Promise<void> => {
 };
 
 const writeAtomic = async (filePath: string, contents: string): Promise<void> => {
-  const tmpPath = `${filePath}.tmp`;
+  const dir = path.dirname(filePath);
+  const tmpPath = path.join(dir, `${path.basename(filePath)}.${randomUUID()}.tmp`);
   await fs.writeFile(tmpPath, contents, 'utf8');
   await fs.rename(tmpPath, filePath);
 };
