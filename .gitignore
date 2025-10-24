@@ -1,17 +1,1 @@
-# Node.js dependencies
-node_modules/
-
-# Build artifacts
-dist/
-
-# TypeScript cache
-*.tsbuildinfo
-
-# Local environment overrides
-.env
-
-# CLI state cache
-.cache/
-
-# macOS metadata
-.DS_Store
+public/media/
