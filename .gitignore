@@ -1,1 +1,5 @@
 public/media/
+dist/
+node_modules/
+
+.env
