@@ -18,11 +18,12 @@ const ServiceContext = createContext<ServiceContextValue | undefined>(undefined)
 export const ServiceProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
   const config = useMemo(() => loadConfig(), []);
   const searchPipeline = useMemo(() => createSearchPipeline(config), [config]);
+
   const downloadService = useMemo(() => {
     const apiClient = createApiClient();
     const jobStore = new JobStore(config.statePath);
-    return new DownloadService(apiClient, jobStore, config.searchLimit, searchPipeline);
-  }, [config.statePath, config.searchLimit, searchPipeline]);
+    return new DownloadService(apiClient, jobStore, config.searchLimit, searchPipeline, config.redirectServerBaseUrl);
+  }, [config.statePath, config.searchLimit, searchPipeline, config.redirectServerBaseUrl]);
   const poller = useMemo(() => new Poller(downloadService, config.pollingIntervalMs), [downloadService, config.pollingIntervalMs]);
 
   return <ServiceContext.Provider value={{ config, downloadService, poller }}>{children}</ServiceContext.Provider>;

@@ -10,6 +10,8 @@ const DEFAULT_SEARCH_LIMIT = 5;
 const DEFAULT_PAGE_SIZE = 5;
 const DEFAULT_MIN_SIZE_GIB = 0.6;
 const DEFAULT_MAX_SIZE_GIB = 5;
+const DEFAULT_REDIRECT_PORT = 8787;
+const DEFAULT_REDIRECT_HOST = '0.0.0.0';
 
 const parsePositiveInt = (value: string | undefined): number | undefined => {
   if (value === undefined) {
@@ -42,6 +44,13 @@ const resolveStatePath = (): string => {
   return projectCache;
 };
 
+const resolveRedirectDbPath = (): string => {
+  if (process.env.TORRENT_REDIRECT_DB_PATH) {
+    return path.resolve(process.env.TORRENT_REDIRECT_DB_PATH);
+  }
+  return path.resolve('.cache', 'torrent-cli', 'presigned.db');
+};
+
 export const loadConfig = (): Config => {
   const pollingEnv = process.env.TORRENT_CLI_POLL_MS;
   const pollingIntervalMs =
@@ -57,6 +66,10 @@ export const loadConfig = (): Config => {
   const resolvedMinGiB = Math.min(minSizeGiB, resolvedMaxGiB);
   const searchMinSizeBytes = Math.floor(resolvedMinGiB * 1024 * 1024 * 1024);
   const searchMaxSizeBytes = Math.floor(resolvedMaxGiB * 1024 * 1024 * 1024);
+  const redirectServerPort = parsePositiveInt(process.env.TORRENT_REDIRECT_PORT) ?? DEFAULT_REDIRECT_PORT;
+  const redirectServerHost = process.env.TORRENT_REDIRECT_HOST ?? DEFAULT_REDIRECT_HOST;
+  const redirectServerBaseUrl =
+    process.env.TORRENT_REDIRECT_BASE_URL ?? `http://127.0.0.1:${redirectServerPort}`;
 
   return {
     apiBaseUrl: process.env.TORRENT_API_URL ?? DEFAULT_API_BASE_URL,
@@ -66,6 +79,10 @@ export const loadConfig = (): Config => {
     searchLimit,
     searchPageSize,
     searchMinSizeBytes,
-    searchMaxSizeBytes
+    searchMaxSizeBytes,
+    redirectDbPath: resolveRedirectDbPath(),
+    redirectServerHost,
+    redirectServerPort,
+    redirectServerBaseUrl
   };
 };

@@ -8,11 +8,16 @@
     "build": "tsc --project tsconfig.json",
     "start": "node dist/index.js",
     "lint": "tsc --noEmit",
-    "bot": "tsx src/telegramBot.ts"
+    "bot": "tsx src/telegramBot.ts",
+    "redirect-server": "tsx src/redirectServer.ts",
+    "register-presign": "tsx src/registerPresignedLink.ts",
+    "list-presigns": "tsx src/listPresignedLinks.ts"
   },
   "dependencies": {
+    "better-sqlite3": "^12.4.1",
     "clipboardy": "4.0.0",
     "dotenv": "16.4.5",
+    "fastify": "^5.6.1",
     "ink": "6.3.1",
     "ink-select-input": "6.2.0",
     "ink-text-input": "6.0.0",
@@ -20,6 +25,7 @@
     "telegraf": "^4.16.3"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "24.7.2",
     "@types/react": "19.2.2",
     "tsx": "4.20.6",

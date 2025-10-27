@@ -67,6 +67,10 @@ export interface Config {
   searchPageSize: number;
   searchMinSizeBytes?: number;
   searchMaxSizeBytes?: number;
+  redirectDbPath: string;
+  redirectServerHost: string;
+  redirectServerPort: number;
+  redirectServerBaseUrl: string;
 }
 
 export interface ApiClient {

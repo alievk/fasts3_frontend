@@ -1,5 +1,6 @@
 public/media/
 dist/
 node_modules/
+.cache/
 
 .env

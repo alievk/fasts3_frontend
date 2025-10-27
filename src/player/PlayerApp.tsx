@@ -1,9 +1,9 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 
 type PlayerState =
   | { status: 'loading' }
-  | { status: 'error'; message: string }
-  | { status: 'ready'; url: string };
+  | { status: 'error'; message: string; url?: string }
+  | { status: 'ready'; url: string; jobId?: string; expiresAt?: string };
 
 const validateS3Url = (rawValue: string | null): PlayerState => {
   if (!rawValue || rawValue.trim().length === 0) {
@@ -43,26 +43,181 @@ export const PlayerApp: React.FC = () => {
   const [playbackError, setPlaybackError] = useState<string | null>(null);
 
   const displayName = useMemo(() => {
-    if (playerState.status !== 'ready') {
-      return 'S3 Player';
+    if (playerState.status === 'ready') {
+      return filenameFromUrl(playerState.url);
     }
-
-    return filenameFromUrl(playerState.url);
+    if (playerState.status === 'error' && playerState.url) {
+      return filenameFromUrl(playerState.url);
+    }
+    return 'S3 Player';
   }, [playerState]);
+
+  const checkS3Link = useCallback(
+    async (
+      url: string
+    ): Promise<
+      | { ok: true }
+      | { ok: false; reason: 'http'; status: number; statusText: string }
+      | { ok: false; reason: 'network' }
+    > => {
+      try {
+        const response = await fetch(url, { method: 'HEAD', mode: 'cors' });
+        if (response.ok || response.status === 405) {
+          return { ok: true };
+        }
+        return {
+          ok: false,
+          reason: 'http',
+          status: response.status,
+          statusText: response.statusText ?? 'Error'
+        };
+      } catch {
+        return { ok: false, reason: 'network' };
+      }
+    },
+    []
+  );
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const result = validateS3Url(params.get('s3Url'));
-    setPlayerState(result);
-  }, []);
+    const jobId = params.get('jobId');
+    const directUrlParam = params.get('s3Url');
+
+    if (jobId) {
+      let cancelled = false;
+      const load = async () => {
+        setPlayerState({ status: 'loading' });
+        try {
+          const infoResponse = await fetch(`/presigned/${encodeURIComponent(jobId)}/info`, {
+            headers: { Accept: 'application/json' }
+          });
+
+          if (cancelled) {
+            return;
+          }
+
+          if (infoResponse.status === 404) {
+            setPlayerState({
+              status: 'error',
+              message: 'No shortcut is registered for this job. Ask the owner to generate a fresh link.'
+            });
+            return;
+          }
+
+          if (infoResponse.status === 410) {
+            const payload = await infoResponse.json().catch<Partial<{ expiresAt: string }>>(() => ({}));
+            const expiresAt = payload?.expiresAt
+              ? ` (expired at ${new Date(payload.expiresAt).toLocaleString()})`
+              : '';
+            setPlayerState({
+              status: 'error',
+              message: `This streaming shortcut has expired${expiresAt}. Request a new link.`
+            });
+            return;
+          }
+
+          if (!infoResponse.ok) {
+            const body = await infoResponse.text().catch(() => '');
+            throw new Error(body || `Failed to load shortcut metadata (HTTP ${infoResponse.status}).`);
+          }
+
+          const payload = (await infoResponse.json()) as {
+            status: 'ready';
+            jobId: string;
+            url?: string;
+            expiresAt?: string;
+            createdAt?: string;
+          };
+
+          if (cancelled) {
+            return;
+          }
+
+          if (!payload.url) {
+            setPlayerState({
+              status: 'error',
+              message: 'Shortcut metadata is missing the streaming URL. Request a new link.'
+            });
+            return;
+          }
+
+          const availability = await checkS3Link(payload.url);
+          if (cancelled) {
+            return;
+          }
+
+          if (!availability.ok) {
+            const message =
+              availability.reason === 'http'
+                ? `Shortcut is registered, but the file responded with ${availability.status} ${availability.statusText}. Ask the owner to regenerate the presigned link.`
+                : 'Shortcut is registered, but the browser cannot reach the S3 file. It may have been removed or the network is blocking it.';
+
+            setPlayerState({
+              status: 'error',
+              message,
+              url: payload.url
+            });
+            return;
+          }
+
+          setPlaybackError(null);
+          setPlayerState({
+            status: 'ready',
+            url: payload.url,
+            jobId: payload.jobId,
+            expiresAt: payload.expiresAt
+          });
+        } catch (error) {
+          if (cancelled) {
+            return;
+          }
+          setPlayerState({
+            status: 'error',
+            message:
+              error instanceof Error
+                ? error.message || 'Failed to load shortcut metadata. Try refreshing the page.'
+                : 'Failed to load shortcut metadata. Try refreshing the page.'
+          });
+        }
+      };
+
+      void load();
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const fallback = validateS3Url(directUrlParam);
+    setPlayerState(fallback);
+  }, [checkS3Link]);
 
   useEffect(() => {
     if (playerState.status === 'ready') {
+      document.title = `${filenameFromUrl(playerState.url)} • S3 Player`;
+    } else if (playerState.status === 'error' && playerState.url) {
       document.title = `${filenameFromUrl(playerState.url)} • S3 Player`;
     } else {
       document.title = 'S3 Player';
     }
   }, [playerState]);
+
+  const diagnosePlaybackFailure = useCallback(
+    async (url: string) => {
+      const result = await checkS3Link(url);
+      if (!result.ok) {
+        if (result.reason === 'http') {
+          setPlaybackError(
+            `Playback failed. The file responded with ${result.status} ${result.statusText}. Try downloading the video instead.`
+          );
+          return;
+        }
+        setPlaybackError('Playback failed. The browser could not reach the S3 file. Try downloading the video instead.');
+        return;
+      }
+      setPlaybackError('Playback failed even though the file is reachable. Try downloading the video instead.');
+    },
+    [checkS3Link]
+  );
 
   const styles = `
     :root {
@@ -181,6 +336,12 @@ export const PlayerApp: React.FC = () => {
       color: #ff8282;
     }
 
+    .message--note {
+      border-color: rgba(88, 166, 255, 0.25);
+      background: rgba(88, 166, 255, 0.1);
+      color: #8cbcff;
+    }
+
     @media (max-width: 600px) {
       .page {
         padding: 16px;
@@ -207,6 +368,13 @@ export const PlayerApp: React.FC = () => {
       <div className="page">
         <style>{styles}</style>
         <div className="message message--error">{playerState.message}</div>
+        {playerState.url && (
+          <div className="actions">
+            <a className="button" href={playerState.url} download rel="noopener" target="_blank">
+              Download
+            </a>
+          </div>
+        )}
       </div>
     );
   }
@@ -226,12 +394,17 @@ export const PlayerApp: React.FC = () => {
           x-webkit-airplay="allow"
           preload="metadata"
           poster=""
-          onError={() => setPlaybackError('Can’t load video. Verify the S3 link or that the file is publicly accessible.')}
+          onError={() => {
+            void diagnosePlaybackFailure(playerState.url);
+          }}
           onPlay={() => setPlaybackError(null)}
         >
           <source src={playerState.url} />
         </video>
         {playbackError && <div className="message message--error">{playbackError}</div>}
+        {playerState.expiresAt && (
+          <div className="message message--note">Shortcut expires at {new Date(playerState.expiresAt).toLocaleString()}.</div>
+        )}
         <div className="actions">
           <a className="button" href={playerState.url} download rel="noopener" target="_blank">
             Download

@@ -47,7 +47,8 @@ export class DownloadService extends EventEmitter {
     private readonly apiClient: ApiClient,
     private readonly jobStore: JobStore,
     private readonly searchLimit: number,
-    private readonly searchPipeline: SearchResultPipeline = []
+    private readonly searchPipeline: SearchResultPipeline = [],
+    private readonly redirectBaseUrl?: string
   ) {
     super();
   }
@@ -138,6 +139,7 @@ export class DownloadService extends EventEmitter {
           const link = await this.apiClient.getJobPresignedLink(jobId);
           if (link?.s3Url) {
             updated = { ...updated, s3Url: link.s3Url };
+            await this.registerRedirect(jobId, link.s3Url, link.expiresIn);
           }
         } catch (error) {
           this.emit('error', error instanceof Error ? error : new Error(String(error)));
@@ -176,6 +178,7 @@ export class DownloadService extends EventEmitter {
     }
     this.jobs.delete(jobId);
     await this.jobStore.remove(jobId);
+    await this.deleteRedirect(jobId);
     this.emit('jobRemoved', jobId);
   }
 
@@ -189,5 +192,61 @@ export class DownloadService extends EventEmitter {
       current = next;
     }
     return current;
+  }
+
+  private async registerRedirect(jobId: string, url: string, expiresInSeconds: number): Promise<void> {
+    if (!this.redirectBaseUrl) {
+      return;
+    }
+
+    try {
+      const endpoint = new URL('/admin/presigned', this.redirectBaseUrl);
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jobId,
+          url,
+          expiresIn: expiresInSeconds
+        })
+      });
+
+      if (!response.ok) {
+        const message = await response.text().catch(() => '');
+        throw new Error(
+          `Failed to register redirect for ${jobId}: ${response.status} ${response.statusText}${
+            message ? ` — ${message}` : ''
+          }`
+        );
+      }
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      this.emit('error', err);
+    }
+  }
+
+  private async deleteRedirect(jobId: string): Promise<void> {
+    if (!this.redirectBaseUrl) {
+      return;
+    }
+
+    try {
+      const endpoint = new URL(`/admin/presigned/${encodeURIComponent(jobId)}`, this.redirectBaseUrl);
+      const response = await fetch(endpoint, {
+        method: 'DELETE'
+      });
+
+      if (!response.ok && response.status !== 404) {
+        const message = await response.text().catch(() => '');
+        throw new Error(
+          `Failed to delete redirect for ${jobId}: ${response.status} ${response.statusText}${
+            message ? ` — ${message}` : ''
+          }`
+        );
+      }
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      this.emit('error', err);
+    }
   }
 }
