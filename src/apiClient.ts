@@ -13,7 +13,7 @@ interface ServerSearchResult {
 }
 
 interface ServerCreateJobResponse {
-  job_id: string;
+  btih: string;
   status: string;
   created_at: string;
 }
@@ -24,7 +24,7 @@ interface ServerHealthResponse {
 }
 
 interface ServerJobDetail {
-  job_id: string;
+  btih: string;
   status: string;
   progress: number | null;
   size_bytes?: number | null;
@@ -34,7 +34,7 @@ interface ServerJobDetail {
 }
 
 interface ServerPresignResponse {
-  job_id: string;
+  btih: string;
   bucket: string;
   key: string;
   s3_url: string;
@@ -76,21 +76,21 @@ class HttpApiClient implements ApiClient {
     });
 
     return {
-      jobId: payload.job_id,
+      btih: payload.btih,
       status: this.normalizeStatus(payload.status),
       createdAt: payload.created_at
     };
   }
 
-  async getJob(jobId: string): Promise<JobDetail | undefined> {
-    const result = await this.fetchJson<ServerJobDetail>(`/jobs/${encodeURIComponent(jobId)}`, {}, { allowNotFound: true });
+  async getJob(btih: string): Promise<JobDetail | undefined> {
+    const result = await this.fetchJson<ServerJobDetail>(`/jobs/${encodeURIComponent(btih)}`, {}, { allowNotFound: true });
 
     if (!result) {
       return undefined;
     }
 
     return {
-      jobId: result.job_id,
+      btih: result.btih,
       status: this.normalizeStatus(result.status),
       progress: result.progress ?? null,
       sizeBytes: result.size_bytes ?? null,
@@ -100,8 +100,8 @@ class HttpApiClient implements ApiClient {
     };
   }
 
-  async deleteJob(jobId: string): Promise<void> {
-    await this.fetchJson(`/jobs/${encodeURIComponent(jobId)}`, { method: 'DELETE' }, { expectNoContent: true });
+  async deleteJob(btih: string): Promise<void> {
+    await this.fetchJson(`/jobs/${encodeURIComponent(btih)}`, { method: 'DELETE' }, { expectNoContent: true });
   }
 
   async health(): Promise<HealthResponse> {
@@ -112,9 +112,9 @@ class HttpApiClient implements ApiClient {
     };
   }
 
-  async getJobPresignedLink(jobId: string): Promise<JobPresignResponse | undefined> {
+  async getJobPresignedLink(btih: string): Promise<JobPresignResponse | undefined> {
     const payload = await this.fetchJson<ServerPresignResponse>(
-      `/jobs/${encodeURIComponent(jobId)}/presign_link`,
+      `/jobs/${encodeURIComponent(btih)}/presign_link`,
       {},
       { allowNotFound: true }
     );
@@ -122,7 +122,7 @@ class HttpApiClient implements ApiClient {
       return undefined;
     }
     return {
-      jobId: payload.job_id,
+      btih: payload.btih,
       bucket: payload.bucket,
       key: payload.key,
       s3Url: payload.s3_url,

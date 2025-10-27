@@ -27,17 +27,17 @@ export const createRedirectServer = () => {
 
   app.post<{
     Body: {
-      jobId?: string;
+      btih?: string;
       url?: string;
       expiresIn?: number;
       expiresAt?: string;
     };
   }>('/admin/presigned', async (request, reply) => {
-    const { jobId, url, expiresIn, expiresAt } = request.body ?? {};
-    if (!jobId || !url) {
+    const { btih, url, expiresIn, expiresAt } = request.body ?? {};
+    if (!btih || !url) {
       return reply.status(400).send({
         error: 'invalid_request',
-        message: '`jobId` and `url` are required.'
+        message: '`btih` and `url` are required.'
       });
     }
 
@@ -67,23 +67,23 @@ export const createRedirectServer = () => {
     }
 
     registry.register({
-      jobId,
+      btih,
       url,
       expiresAt: targetExpiry
     });
 
     return reply.status(201).send({
-      jobId,
+      btih,
       url,
       expiresAt: targetExpiry.toISOString()
     });
   });
 
   app.delete<{
-    Params: { jobId: string };
-  }>('/admin/presigned/:jobId', async (request, reply) => {
-    const { jobId } = request.params;
-    const removed = registry.remove(jobId);
+    Params: { btih: string };
+  }>('/admin/presigned/:btih', async (request, reply) => {
+    const { btih } = request.params;
+    const removed = registry.remove(btih);
     if (!removed) {
       return reply.status(404).send({
         error: 'not_found',
@@ -94,10 +94,10 @@ export const createRedirectServer = () => {
   });
 
   app.get<{
-    Params: { jobId: string };
-  }>('/presigned/:jobId/info', async (request, reply) => {
-    const { jobId } = request.params;
-    const record = registry.getRecord(jobId);
+    Params: { btih: string };
+  }>('/presigned/:btih/info', async (request, reply) => {
+    const { btih } = request.params;
+    const record = registry.getRecord(btih);
 
     if (!record) {
       return reply.status(404).send({
@@ -113,7 +113,7 @@ export const createRedirectServer = () => {
     if (record.expiresAtMs <= Date.now()) {
       return reply.status(410).send({
         status: 'expired',
-        jobId: record.jobId,
+        btih: record.btih,
         expiresAt: expiresAtIso,
         createdAt: createdAtIso,
         message: 'Presigned link expired.'
@@ -122,7 +122,7 @@ export const createRedirectServer = () => {
 
     return reply.send({
       status: 'ready',
-      jobId: record.jobId,
+      btih: record.btih,
       url: record.url,
       expiresAt: expiresAtIso,
       createdAt: createdAtIso
@@ -130,10 +130,10 @@ export const createRedirectServer = () => {
   });
 
   app.get<{
-    Params: { jobId: string };
-  }>('/presigned/:jobId', async (request, reply) => {
-    const { jobId } = request.params;
-    const record = registry.getRecord(jobId);
+    Params: { btih: string };
+  }>('/presigned/:btih', async (request, reply) => {
+    const { btih } = request.params;
+    const record = registry.getRecord(btih);
 
     if (!record) {
       return reply.status(404).send({

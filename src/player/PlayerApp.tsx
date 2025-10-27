@@ -3,7 +3,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 type PlayerState =
   | { status: 'loading' }
   | { status: 'error'; message: string; url?: string }
-  | { status: 'ready'; url: string; jobId?: string; expiresAt?: string };
+  | { status: 'ready'; url: string; btih?: string; expiresAt?: string };
 
 const validateS3Url = (rawValue: string | null): PlayerState => {
   if (!rawValue || rawValue.trim().length === 0) {
@@ -80,15 +80,15 @@ export const PlayerApp: React.FC = () => {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const jobId = params.get('jobId');
+    const btih = params.get('btih') ?? params.get('jobId');
     const directUrlParam = params.get('s3Url');
 
-    if (jobId) {
+    if (btih) {
       let cancelled = false;
       const load = async () => {
         setPlayerState({ status: 'loading' });
         try {
-          const infoResponse = await fetch(`/presigned/${encodeURIComponent(jobId)}/info`, {
+          const infoResponse = await fetch(`/presigned/${encodeURIComponent(btih)}/info`, {
             headers: { Accept: 'application/json' }
           });
 
@@ -123,7 +123,7 @@ export const PlayerApp: React.FC = () => {
 
           const payload = (await infoResponse.json()) as {
             status: 'ready';
-            jobId: string;
+            btih: string;
             url?: string;
             expiresAt?: string;
             createdAt?: string;
@@ -164,7 +164,7 @@ export const PlayerApp: React.FC = () => {
           setPlayerState({
             status: 'ready',
             url: payload.url,
-            jobId: payload.jobId,
+            btih: payload.btih,
             expiresAt: payload.expiresAt
           });
         } catch (error) {

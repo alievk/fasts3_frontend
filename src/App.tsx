@@ -11,7 +11,7 @@ type Screen =
   | { key: 'menu' }
   | { key: 'search' }
   | { key: 'jobs' }
-  | { key: 'jobDetail'; jobId: string };
+  | { key: 'jobDetail'; btih: string };
 
 type NavigationState = {
   history: Screen[];
@@ -88,9 +88,9 @@ export const App: React.FC = () => {
     exit();
   };
 
-  const handleJobOpen = (jobId: string) => {
-    void downloadService.syncJob(jobId);
-    pushScreen({ key: 'jobDetail', jobId });
+  const handleJobOpen = (btih: string) => {
+    void downloadService.syncJob(btih);
+    pushScreen({ key: 'jobDetail', btih });
   };
 
   const handleSelect = async (result: SearchResult) => {
@@ -102,13 +102,13 @@ export const App: React.FC = () => {
     setActionError(undefined);
     try {
       const job = await downloadService.startDownload(result);
-      setInfoMessage(`Started download: ${job.label ?? job.jobId}`);
+      setInfoMessage(`Started download: ${job.label ?? job.btih}`);
       clearError();
       setNavigation({
         history: [
           { key: 'menu' },
           { key: 'jobs' },
-          { key: 'jobDetail', jobId: job.jobId }
+          { key: 'jobDetail', btih: job.btih }
         ],
         index: 2
       });
@@ -119,12 +119,12 @@ export const App: React.FC = () => {
     }
   };
 
-  const handleRemove = async (jobId: string) => {
+  const handleRemove = async (btih: string) => {
     setActionError(undefined);
     try {
-      await downloadService.remove(jobId);
+      await downloadService.remove(btih);
       clearError();
-      setInfoMessage(`Removed job ${jobId}`);
+      setInfoMessage(`Removed job ${btih}`);
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
       setActionError(err.message);
@@ -132,9 +132,9 @@ export const App: React.FC = () => {
     }
   };
 
-  const handleDeleteAndNavigate = async (jobId: string) => {
+  const handleDeleteAndNavigate = async (btih: string) => {
     try {
-      await handleRemove(jobId);
+      await handleRemove(btih);
       setNavigation({
         history: [
           { key: 'menu' },
@@ -148,7 +148,7 @@ export const App: React.FC = () => {
   };
 
   const currentJob =
-    currentScreen.key === 'jobDetail' ? jobs.find((job) => job.jobId === currentScreen.jobId) : undefined;
+    currentScreen.key === 'jobDetail' ? jobs.find((job) => job.btih === currentScreen.btih) : undefined;
 
   return (
     <Box flexDirection="column">
@@ -182,7 +182,7 @@ export const App: React.FC = () => {
             job={currentJob}
             focus
             onBack={goBack}
-            onDelete={currentJob ? (jobId) => handleDeleteAndNavigate(jobId) : undefined}
+            onDelete={currentJob ? (btih) => handleDeleteAndNavigate(btih) : undefined}
           />
         )}
       </Box>
@@ -252,17 +252,17 @@ const MainMenu: React.FC<MainMenuProps> = ({ focus, onNavigate, onExit }) => {
 interface JobsScreenProps {
   jobs: StoredJob[];
   focus: boolean;
-  onSelect: (jobId: string) => void;
+  onSelect: (btih: string) => void;
 }
 
 const JobsScreen: React.FC<JobsScreenProps> = ({ jobs, focus, onSelect }) => {
   const items = useMemo(
     () =>
       jobs.map((job) => ({
-        label: `${job.label ?? job.jobId} — ${job.lastKnownStatus}${
+        label: `${job.label ?? job.btih} — ${job.lastKnownStatus}${
           job.progress !== null ? ` (${Math.round(job.progress * 100)}%)` : ''
         }`,
-        value: job.jobId
+        value: job.btih
       })),
     [jobs]
   );
@@ -293,7 +293,7 @@ interface JobDetailScreenProps {
   job: StoredJob | undefined;
   focus: boolean;
   onBack: () => void;
-  onDelete?: (jobId: string) => Promise<void>;
+  onDelete?: (btih: string) => Promise<void>;
 }
 
 const JobDetailScreen: React.FC<JobDetailScreenProps> = ({ job, focus, onBack, onDelete }) => {
@@ -347,9 +347,9 @@ const JobDetailScreen: React.FC<JobDetailScreenProps> = ({ job, focus, onBack, o
 
   return (
     <Box flexDirection="column">
-      <Text>{job.label ?? job.jobId}</Text>
+      <Text>{job.label ?? job.btih}</Text>
       <Text>Status: {job.lastKnownStatus}</Text>
-      <Text>ID: {job.jobId}</Text>
+      <Text>ID: {job.btih}</Text>
       <Text>
         Progress:{' '}
         {job.lastKnownStatus === 'completed'
@@ -390,7 +390,7 @@ const JobDetailScreen: React.FC<JobDetailScreenProps> = ({ job, focus, onBack, o
             setIsDeleting(true);
             void (async () => {
               try {
-                await onDelete(job.jobId);
+                await onDelete(job.btih);
               } finally {
                 setIsDeleting(false);
               }

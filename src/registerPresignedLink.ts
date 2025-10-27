@@ -3,13 +3,13 @@ import process from 'node:process';
 import { loadConfig } from './config.js';
 
 const usage = () => {
-  console.error('Usage: tsx src/registerPresignedLink.ts <jobId> <url> <expiresInSeconds|ISO8601>');
+  console.error('Usage: tsx src/registerPresignedLink.ts <btih> <url> <expiresInSeconds|ISO8601>');
   process.exit(1);
 };
 
-const [, , jobId, url, expiresInput] = process.argv;
+const [, , btih, url, expiresInput] = process.argv;
 
-if (!jobId || !url || !expiresInput) {
+if (!btih || !url || !expiresInput) {
   usage();
 }
 
@@ -36,7 +36,7 @@ const main = async () => {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      jobId,
+      btih,
       url,
       expiresAt: expiresAt.toISOString()
     })
@@ -45,13 +45,13 @@ const main = async () => {
   if (!response.ok) {
     const body = await response.text().catch(() => '');
     console.error(
-      `Failed to register ${jobId}: ${response.status} ${response.statusText}${body ? ` — ${body}` : ''}`
+      `Failed to register ${btih}: ${response.status} ${response.statusText}${body ? ` — ${body}` : ''}`
     );
     process.exit(1);
   }
 
   console.log(
-    `Registered ${jobId} with expiry ${expiresAt.toISOString()} (${Math.round(
+    `Registered ${btih} with expiry ${expiresAt.toISOString()} (${Math.round(
       (expiresAt.getTime() - Date.now()) / 1000
     )}s remaining)`
   );

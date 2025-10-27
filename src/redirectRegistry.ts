@@ -3,34 +3,34 @@ import path from 'node:path';
 import Database from 'better-sqlite3';
 
 interface RedirectRow {
-  job_id: string;
+  btih: string;
   url: string;
   expires_at: number;
   created_at: number;
 }
 
 interface RedirectCacheEntry {
-  jobId: string;
+  btih: string;
   url: string;
   expiresAtMs: number;
   createdAtMs: number;
 }
 
 export interface RedirectEntry {
-  jobId: string;
+  btih: string;
   url: string;
   expiresAt: string;
   createdAt: string;
 }
 
 export interface RedirectRegistration {
-  jobId: string;
+  btih: string;
   url: string;
   expiresAt: Date;
 }
 
 export interface RedirectRecord {
-  jobId: string;
+  btih: string;
   url: string;
   expiresAtMs: number;
   createdAtMs: number;
@@ -87,21 +87,21 @@ export class RedirectRegistry {
     const now = Date.now();
 
     insertStmt.run({
-      jobId: registration.jobId,
+      btih: registration.btih,
       url: registration.url,
       expiresAt: expiresAtMs,
       createdAt: now
     });
 
-    const row = selectOneStmt.get(registration.jobId) as RedirectRow | undefined;
+    const row = selectOneStmt.get(registration.btih) as RedirectRow | undefined;
     if (row) {
       const entry = this.rowToCacheEntry(row);
-      this.cache.set(entry.jobId, entry);
+      this.cache.set(entry.btih, entry);
     }
   }
 
-  resolve(jobId: string): string | undefined {
-    const record = this.getRecord(jobId);
+  resolve(btih: string): string | undefined {
+    const record = this.getRecord(btih);
     if (!record) {
       return undefined;
     }
@@ -111,11 +111,11 @@ export class RedirectRegistry {
     return record.url;
   }
 
-  remove(jobId: string): boolean {
+  remove(btih: string): boolean {
     this.ensureStarted();
     const deleteOneStmt = this.deleteOneStmt!;
-    deleteOneStmt.run(jobId);
-    return this.cache.delete(jobId);
+    deleteOneStmt.run(btih);
+    return this.cache.delete(btih);
   }
 
   listActive(): RedirectEntry[] {
@@ -123,7 +123,7 @@ export class RedirectRegistry {
     return [...this.cache.values()]
       .sort((a, b) => a.expiresAtMs - b.expiresAtMs)
       .map((entry) => ({
-        jobId: entry.jobId,
+        btih: entry.btih,
         url: entry.url,
         expiresAt: new Date(entry.expiresAtMs).toISOString(),
         createdAt: new Date(entry.createdAtMs).toISOString()
@@ -132,21 +132,21 @@ export class RedirectRegistry {
 
   private rowToCacheEntry(row: RedirectRow): RedirectCacheEntry {
     return {
-      jobId: row.job_id,
+      btih: row.btih,
       url: row.url,
       expiresAtMs: row.expires_at,
       createdAtMs: row.created_at
     };
   }
 
-  getRecord(jobId: string): RedirectRecord | undefined {
+  getRecord(btih: string): RedirectRecord | undefined {
     this.ensureStarted();
-    const entry = this.cache.get(jobId);
+    const entry = this.cache.get(btih);
     if (!entry) {
       return undefined;
     }
     return {
-      jobId: entry.jobId,
+      btih: entry.btih,
       url: entry.url,
       expiresAtMs: entry.expiresAtMs,
       createdAtMs: entry.createdAtMs
@@ -164,7 +164,7 @@ export class RedirectRegistry {
     this.ensureStarted();
     const rows = this.selectAllStmt!.all() as RedirectRow[];
     for (const row of rows) {
-      this.cache.set(row.job_id, this.rowToCacheEntry(row));
+      this.cache.set(row.btih, this.rowToCacheEntry(row));
     }
   }
 
@@ -178,7 +178,7 @@ export class RedirectRegistry {
     const db = this.db!;
     db.exec(`
       CREATE TABLE IF NOT EXISTS redirects (
-        job_id TEXT PRIMARY KEY,
+        btih TEXT PRIMARY KEY,
         url TEXT NOT NULL,
         expires_at INTEGER NOT NULL,
         created_at INTEGER NOT NULL
@@ -189,16 +189,16 @@ export class RedirectRegistry {
 
   private prepareStatements(): void {
     const db = this.db!;
-    this.selectAllStmt = db.prepare('SELECT job_id, url, expires_at, created_at FROM redirects');
-    this.selectOneStmt = db.prepare('SELECT job_id, url, expires_at, created_at FROM redirects WHERE job_id = ?');
+    this.selectAllStmt = db.prepare('SELECT btih, url, expires_at, created_at FROM redirects');
+    this.selectOneStmt = db.prepare('SELECT btih, url, expires_at, created_at FROM redirects WHERE btih = ?');
     this.insertStmt = db.prepare(`
-      INSERT INTO redirects (job_id, url, expires_at, created_at)
-      VALUES (@jobId, @url, @expiresAt, @createdAt)
-      ON CONFLICT(job_id) DO UPDATE SET
+      INSERT INTO redirects (btih, url, expires_at, created_at)
+      VALUES (@btih, @url, @expiresAt, @createdAt)
+      ON CONFLICT(btih) DO UPDATE SET
         url = excluded.url,
         expires_at = excluded.expires_at
     `);
-    this.deleteOneStmt = db.prepare('DELETE FROM redirects WHERE job_id = ?');
+    this.deleteOneStmt = db.prepare('DELETE FROM redirects WHERE btih = ?');
   }
 
   private ensureStarted(): void {

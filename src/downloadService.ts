@@ -4,13 +4,13 @@ import { JobStore } from './jobStore.js';
 
 type DownloadServiceEvents = {
   jobUpdated: (job: StoredJob) => void;
-  jobRemoved: (jobId: string) => void;
+  jobRemoved: (btih: string) => void;
   error: (error: Error) => void;
   ready: (jobs: StoredJob[]) => void;
 };
 
 const mapDetailToStored = (detail: JobDetail, existing?: StoredJob): StoredJob => ({
-  jobId: detail.jobId,
+  btih: detail.btih,
   label: detail.label ?? existing?.label ?? null,
   createdAt: existing?.createdAt ?? new Date().toISOString(),
   lastKnownStatus: detail.status,
@@ -22,13 +22,13 @@ const mapDetailToStored = (detail: JobDetail, existing?: StoredJob): StoredJob =
 });
 
 const newStoredJob = (
-  jobId: string,
+  btih: string,
   label: string | undefined,
   status: JobStatus,
   createdAt: string,
   sizeBytes: number | undefined
 ): StoredJob => ({
-  jobId,
+  btih,
   label: label ?? null,
   createdAt,
   lastKnownStatus: status,
@@ -81,7 +81,7 @@ export class DownloadService extends EventEmitter {
 
     const data = await this.jobStore.load();
     Object.values(data.jobs).forEach((job) => {
-      this.jobs.set(job.jobId, job);
+      this.jobs.set(job.btih, job);
     });
     this.initialized = true;
     this.emit('ready', this.getJobs());
@@ -102,8 +102,8 @@ export class DownloadService extends EventEmitter {
   async startDownload(result: SearchResult): Promise<StoredJob> {
     try {
       const response = await this.apiClient.createJob(result.magnet, result.title);
-      const stored = newStoredJob(response.jobId, result.title, response.status, response.createdAt, result.sizeBytes);
-      this.jobs.set(stored.jobId, stored);
+      const stored = newStoredJob(response.btih, result.title, response.status, response.createdAt, result.sizeBytes);
+      this.jobs.set(stored.btih, stored);
       await this.jobStore.upsert(stored);
       this.emit('jobUpdated', stored);
       return stored;
@@ -123,30 +123,30 @@ export class DownloadService extends EventEmitter {
     }
   }
 
-  async syncJob(jobId: string): Promise<void> {
+  async syncJob(btih: string): Promise<void> {
     try {
-      const detail = await this.apiClient.getJob(jobId);
+      const detail = await this.apiClient.getJob(btih);
       if (!detail) {
-        await this.removeLocal(jobId);
+        await this.removeLocal(btih);
         return;
       }
 
-      const existing = this.jobs.get(jobId);
+      const existing = this.jobs.get(btih);
       let updated = mapDetailToStored(detail, existing ?? undefined);
 
       if (detail.status === 'completed' && !updated.s3Url) {
         try {
-          const link = await this.apiClient.getJobPresignedLink(jobId);
+          const link = await this.apiClient.getJobPresignedLink(btih);
           if (link?.s3Url) {
             updated = { ...updated, s3Url: link.s3Url };
-            await this.registerRedirect(jobId, link.s3Url, link.expiresIn);
+            await this.registerRedirect(btih, link.s3Url, link.expiresIn);
           }
         } catch (error) {
           this.emit('error', error instanceof Error ? error : new Error(String(error)));
         }
       }
 
-      this.jobs.set(jobId, updated);
+      this.jobs.set(btih, updated);
       await this.jobStore.upsert(updated);
       this.emit('jobUpdated', updated);
     } catch (error) {
@@ -159,27 +159,27 @@ export class DownloadService extends EventEmitter {
     if (activeJobs.length === 0) {
       return;
     }
-    await Promise.all(activeJobs.map((job) => this.syncJob(job.jobId)));
+    await Promise.all(activeJobs.map((job) => this.syncJob(job.btih)));
   }
 
-  async remove(jobId: string): Promise<void> {
+  async remove(btih: string): Promise<void> {
     try {
-      await this.apiClient.deleteJob(jobId);
+      await this.apiClient.deleteJob(btih);
     } catch (error) {
       this.emit('error', error instanceof Error ? error : new Error(String(error)));
     } finally {
-      await this.removeLocal(jobId);
+      await this.removeLocal(btih);
     }
   }
 
-  private async removeLocal(jobId: string): Promise<void> {
-    if (!this.jobs.has(jobId)) {
+  private async removeLocal(btih: string): Promise<void> {
+    if (!this.jobs.has(btih)) {
       return;
     }
-    this.jobs.delete(jobId);
-    await this.jobStore.remove(jobId);
-    await this.deleteRedirect(jobId);
-    this.emit('jobRemoved', jobId);
+    this.jobs.delete(btih);
+    await this.jobStore.remove(btih);
+    await this.deleteRedirect(btih);
+    this.emit('jobRemoved', btih);
   }
 
   private async applySearchPipeline(results: SearchResult[]): Promise<SearchResult[]> {
@@ -194,7 +194,7 @@ export class DownloadService extends EventEmitter {
     return current;
   }
 
-  private async registerRedirect(jobId: string, url: string, expiresInSeconds: number): Promise<void> {
+  private async registerRedirect(btih: string, url: string, expiresInSeconds: number): Promise<void> {
     if (!this.redirectBaseUrl) {
       return;
     }
@@ -205,7 +205,7 @@ export class DownloadService extends EventEmitter {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          jobId,
+          btih,
           url,
           expiresIn: expiresInSeconds
         })
@@ -214,7 +214,7 @@ export class DownloadService extends EventEmitter {
       if (!response.ok) {
         const message = await response.text().catch(() => '');
         throw new Error(
-          `Failed to register redirect for ${jobId}: ${response.status} ${response.statusText}${
+          `Failed to register redirect for ${btih}: ${response.status} ${response.statusText}${
             message ? ` — ${message}` : ''
           }`
         );
@@ -225,13 +225,13 @@ export class DownloadService extends EventEmitter {
     }
   }
 
-  private async deleteRedirect(jobId: string): Promise<void> {
+  private async deleteRedirect(btih: string): Promise<void> {
     if (!this.redirectBaseUrl) {
       return;
     }
 
     try {
-      const endpoint = new URL(`/admin/presigned/${encodeURIComponent(jobId)}`, this.redirectBaseUrl);
+      const endpoint = new URL(`/admin/presigned/${encodeURIComponent(btih)}`, this.redirectBaseUrl);
       const response = await fetch(endpoint, {
         method: 'DELETE'
       });
@@ -239,7 +239,7 @@ export class DownloadService extends EventEmitter {
       if (!response.ok && response.status !== 404) {
         const message = await response.text().catch(() => '');
         throw new Error(
-          `Failed to delete redirect for ${jobId}: ${response.status} ${response.statusText}${
+          `Failed to delete redirect for ${btih}: ${response.status} ${response.statusText}${
             message ? ` — ${message}` : ''
           }`
         );

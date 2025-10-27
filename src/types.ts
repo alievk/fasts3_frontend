@@ -14,7 +14,7 @@ export type SearchResultStage = (results: SearchResult[]) => SearchResult[] | Pr
 export type SearchResultPipeline = SearchResultStage[];
 
 export interface JobDetail {
-  jobId: string;
+  btih: string;
   status: JobStatus;
   progress: number | null;
   sizeBytes?: number | null;
@@ -29,7 +29,7 @@ export interface HealthResponse {
 }
 
 export interface StoredJob {
-  jobId: string;
+  btih: string;
   label?: string | null;
   createdAt: string;
   lastKnownStatus: JobStatus;
@@ -41,7 +41,7 @@ export interface StoredJob {
 }
 
 export interface JobPresignResponse {
-  jobId: string;
+  btih: string;
   bucket: string;
   key: string;
   s3Url: string;
@@ -53,7 +53,7 @@ export interface JobStoreData {
 }
 
 export interface CreateJobResponse {
-  jobId: string;
+  btih: string;
   status: JobStatus;
   createdAt: string;
 }
@@ -76,8 +76,8 @@ export interface Config {
 export interface ApiClient {
   search(query: string, limit?: number): Promise<SearchResult[]>;
   createJob(magnet: string, label?: string): Promise<CreateJobResponse>;
-  getJob(jobId: string): Promise<JobDetail | undefined>;
-  deleteJob(jobId: string): Promise<void>;
+  getJob(btih: string): Promise<JobDetail | undefined>;
+  deleteJob(btih: string): Promise<void>;
   health(): Promise<HealthResponse>;
-  getJobPresignedLink(jobId: string): Promise<JobPresignResponse | undefined>;
+  getJobPresignedLink(btih: string): Promise<JobPresignResponse | undefined>;
 }

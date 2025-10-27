@@ -59,28 +59,28 @@ Assume deployments under `https://<host>/api`. Paths below use this base.
   "label": "Ubuntu Noble 24.04 Desktop"
 }
 ```
-- `magnet` (string, required). Validation should ensure proper `magnet:?` prefix.
-- `label` (string, optional): client display name.
+- `magnet` (string, required). Validation ensures a proper `magnet:?` prefix and extracts the BTIH.
+- `label` (string, optional): client display name (latest value wins if reused).
 
 **Response 202:**
 ```json
 {
-  "job_id": "job-1f6bf62b-2f6c-4a72-b7c8-4df5971e2b5b",
+  "btih": "1f6bf62b2f6c4a72b7c84df5971e2b5b7c84df5",
   "status": "queued",
   "created_at": "2025-10-13T15:12:31.123Z"
 }
 ```
 
 - `status` must be one of `queued | downloading | completed | error`.
-- Respond with `409` if the magnet already has an active job.
+- When a torrent with the same BTIH was previously uploaded, the response comes back immediately with `status: "completed"` and the stored S3 location instead of queuing a duplicate download.
 
 ### 4. Get Job Status
-`GET /api/jobs/{job_id}`
+`GET /api/jobs/{btih}`
 
 **Response 200:**
 ```json
 {
-  "job_id": "job-1f6bf62b-2f6c-4a72-b7c8-4df5971e2b5b",
+  "btih": "1f6bf62b2f6c4a72b7c84df5971e2b5b7c84df5",
   "status": "downloading",
   "progress": 0.42,
   "updated_at": "2025-10-13T15:24:01.591Z",
@@ -90,23 +90,23 @@ Assume deployments under `https://<host>/api`. Paths below use this base.
 
 Field notes:
 - `progress` in `[0,1]`, may be `null` if unknown.
-- No download link is returned; clients must call `/api/jobs/{job_id}/presign_link` to fetch a presigned URL once the job is completed.
+- No download link is returned; clients must call `/api/jobs/{btih}/presign_link` to fetch a presigned URL once the job is completed.
 - `error` string recommended when `status == "error"`.
 
 Error cases:
-- `404` when job_id is unknown or expired (CLI will treat as orphan and remove locally).
+- `404` when `btih` is unknown or has been deleted (CLI will treat as orphan and remove locally).
 
 ### 5. Get Job Presigned Link
-`GET /api/jobs/{job_id}/presign_link`
+`GET /api/jobs/{btih}/presign_link`
 
 Purpose: obtain an HTTPS presigned link for the first uploaded torrent file. Returns `404` if the job is unfinished or stored locally.
 
 **Response 200:**
 ```json
 {
-  "job_id": "job-1f6bf62b-2f6c-4a72-b7c8-4df5971e2b5b",
+  "btih": "1f6bf62b2f6c4a72b7c84df5971e2b5b7c84df5",
   "bucket": "torrent-downloads",
-  "key": "jobs/job-1f6bf62b/files/000_readme.txt",
+  "key": "jobs/1f6bf62b2f6c4a72b7c84df5971e2b5b7c84df5/files/000_readme.txt",
   "s3_url": "https://s3.amazonaws.com/torrent-downloads/jobs/...",
   "expires_in": 900
 }
@@ -116,7 +116,7 @@ Purpose: obtain an HTTPS presigned link for the first uploaded torrent file. Ret
 - Return `503` with error payload when presigning is disabled or fails.
 
 ### 6. Delete Job
-`DELETE /api/jobs/{job_id}`
+`DELETE /api/jobs/{btih}`
 
 Purpose: allow clients to cancel jobs and clean up storage.
 

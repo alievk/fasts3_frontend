@@ -16,7 +16,7 @@ const main = async () => {
   }
 
   const entries = (await response.json()) as Array<{
-    jobId: string;
+    btih: string;
     url: string;
     expiresAt: string;
   }>;
@@ -29,7 +29,7 @@ const main = async () => {
   const now = Date.now();
   console.table(
     entries.map((entry) => ({
-      jobId: entry.jobId,
+      btih: entry.btih,
       status: new Date(entry.expiresAt).getTime() <= now ? 'expired' : 'ready',
       expiresAt: entry.expiresAt,
       url: entry.url

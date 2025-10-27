@@ -150,8 +150,8 @@ const formatDateTime = (primary: string | Date | null | undefined, fallback?: Da
 const formatJobDetail = (job: StoredJob): string => {
   const lastUpdated = formatDateTime(job.lastSyncedAt ?? null);
   const lines = [
-    `Title: ${job.label ?? job.jobId}`,
-    `ID: ${job.jobId}`,
+    `Title: ${job.label ?? job.btih}`,
+    `BTIH: ${job.btih}`,
     `Status: ${job.lastKnownStatus}`,
     `Progress: ${
       job.lastKnownStatus === 'completed'
@@ -208,7 +208,7 @@ const buildSearchPage = (results: SearchResult[], requestedPage: number) => {
 };
 
 const buildJobActionsKeyboard = (job: StoredJob) => {
-  const encodedId = encodeURIComponent(job.jobId);
+  const encodedId = encodeURIComponent(job.btih);
   const buttons = [
     job.s3Url ? Markup.button.url('Open link', job.s3Url) : undefined,
     Markup.button.callback('Refresh', `refresh:${encodedId}`),
@@ -220,8 +220,8 @@ const buildJobActionsKeyboard = (job: StoredJob) => {
 const buildJobsKeyboard = (jobs: StoredJob[]) => {
   const buttons = jobs.map((job) =>
     Markup.button.callback(
-      `${normalizeTitle(job.label ?? job.jobId)} — ${job.lastKnownStatus}`,
-      `job:${encodeURIComponent(job.jobId)}`
+      `${normalizeTitle(job.label ?? job.btih)} — ${job.lastKnownStatus}`,
+      `job:${encodeURIComponent(job.btih)}`
     )
   );
   return Markup.inlineKeyboard(buttons, { columns: 1 });
@@ -308,7 +308,7 @@ bot.action(/^start:(\d+)$/, async (ctx) => {
     const job = await downloadService.startDownload(result);
     await safeAnswerCallback(ctx, 'Download started.');
     await ctx.editMessageReplyMarkup(undefined);
-    await ctx.reply(`Started ${result.title}\nJob ID: ${job.jobId}`);
+    await ctx.reply(`Started ${result.title}\nBTIH: ${job.btih}`);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     await safeAnswerCallback(ctx, 'Failed to start download', { show_alert: true });
@@ -339,15 +339,15 @@ bot.action(/^page:(\d+)$/, async (ctx) => {
 bot.action(/^job:(.+)$/, async (ctx) => {
   const match = ctx.match as RegExpExecArray | undefined;
   const rawId = match?.[1];
-  const jobId = rawId ? decodeURIComponent(rawId) : undefined;
-  if (!jobId) {
+  const btih = rawId ? decodeURIComponent(rawId) : undefined;
+  if (!btih) {
     await safeAnswerCallback(ctx);
     return;
   }
   await safeAnswerCallback(ctx);
-  const job = trackedJobs.get(jobId) ?? downloadService.getJobs().find((item) => item.jobId === jobId);
+  const job = trackedJobs.get(btih) ?? downloadService.getJobs().find((item) => item.btih === btih);
   if (!job) {
-    await ctx.reply(`Job ${jobId} not found.`);
+    await ctx.reply(`Job ${btih} not found.`);
     return;
   }
   await ctx.reply(formatJobDetail(job), buildJobActionsKeyboard(job));
@@ -356,16 +356,16 @@ bot.action(/^job:(.+)$/, async (ctx) => {
 bot.action(/^refresh:(.+)$/, async (ctx) => {
   const match = ctx.match as RegExpExecArray | undefined;
   const rawId = match?.[1];
-  const jobId = rawId ? decodeURIComponent(rawId) : undefined;
-  if (!jobId) {
+  const btih = rawId ? decodeURIComponent(rawId) : undefined;
+  if (!btih) {
     await safeAnswerCallback(ctx);
     return;
   }
   await safeAnswerCallback(ctx);
-  await downloadService.syncJob(jobId);
-  const job = trackedJobs.get(jobId) ?? downloadService.getJobs().find((item) => item.jobId === jobId);
+  await downloadService.syncJob(btih);
+  const job = trackedJobs.get(btih) ?? downloadService.getJobs().find((item) => item.btih === btih);
   if (!job) {
-    await safeEditMessageText(ctx, `Job ${jobId} not found.`);
+    await safeEditMessageText(ctx, `Job ${btih} not found.`);
     return;
   }
   await safeEditMessageText(ctx, formatJobDetail(job), buildJobActionsKeyboard(job));
@@ -374,18 +374,18 @@ bot.action(/^refresh:(.+)$/, async (ctx) => {
 bot.action(/^delete:(.+)$/, async (ctx) => {
   const match = ctx.match as RegExpExecArray | undefined;
   const rawId = match?.[1];
-  const jobId = rawId ? decodeURIComponent(rawId) : undefined;
+  const btih = rawId ? decodeURIComponent(rawId) : undefined;
   const chatId = ctx.chat?.id;
-  if (!jobId || !chatId) {
+  if (!btih || !chatId) {
     await safeAnswerCallback(ctx);
     return;
   }
   await safeAnswerCallback(ctx);
-  const existing = trackedJobs.get(jobId) ?? downloadService.getJobs().find((item) => item.jobId === jobId);
-  removalSuppressions.set(jobId, chatId);
-  await downloadService.remove(jobId);
+  const existing = trackedJobs.get(btih) ?? downloadService.getJobs().find((item) => item.btih === btih);
+  removalSuppressions.set(btih, chatId);
+  await downloadService.remove(btih);
   try {
-    await safeEditMessageText(ctx, `Job removed: ${existing?.label ?? jobId}`);
+    await safeEditMessageText(ctx, `Job removed: ${existing?.label ?? btih}`);
   } catch (error) {
     console.error('Failed to edit job message after deletion:', error);
   }
@@ -393,20 +393,20 @@ bot.action(/^delete:(.+)$/, async (ctx) => {
 });
 
 downloadService.on('ready', (jobs) => {
-  jobs.forEach((job) => trackedJobs.set(job.jobId, job));
+  jobs.forEach((job) => trackedJobs.set(job.btih, job));
 });
 
 downloadService.on('jobUpdated', (job) => {
-  const previous = trackedJobs.get(job.jobId);
+  const previous = trackedJobs.get(job.btih);
   const statusChanged = !previous || previous.lastKnownStatus !== job.lastKnownStatus;
   const linkReady = !previous?.s3Url && !!job.s3Url;
-  trackedJobs.set(job.jobId, job);
+  trackedJobs.set(job.btih, job);
   if (!statusChanged && !linkReady) {
     return;
   }
   void broadcast(
     [
-      `Job update: ${job.label ?? job.jobId}`,
+      `Job update: ${job.label ?? job.btih}`,
       `Status: ${job.lastKnownStatus}`,
       job.progress !== null ? `Progress: ${Math.round(job.progress * 100)}%` : undefined,
       job.s3Url ? `S3 link: ${job.s3Url}` : undefined
@@ -416,12 +416,12 @@ downloadService.on('jobUpdated', (job) => {
   );
 });
 
-downloadService.on('jobRemoved', (jobId) => {
-  const previous = trackedJobs.get(jobId);
-  trackedJobs.delete(jobId);
-  const label = previous?.label ?? jobId;
-  const suppressedChatId = removalSuppressions.get(jobId);
-  removalSuppressions.delete(jobId);
+downloadService.on('jobRemoved', (btih) => {
+  const previous = trackedJobs.get(btih);
+  trackedJobs.delete(btih);
+  const label = previous?.label ?? btih;
+  const suppressedChatId = removalSuppressions.get(btih);
+  removalSuppressions.delete(btih);
   void broadcast(`Job removed: ${label}`, suppressedChatId !== undefined ? { excludeChatId: suppressedChatId } : undefined);
 });
 
