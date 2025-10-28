@@ -50,10 +50,12 @@ interface ServerPresignResponse {
 class HttpApiClient implements ApiClient {
   private readonly baseUrl: string;
   private readonly authToken: string;
+  private readonly searchRequestTimeoutMs: number;
 
-  constructor(baseUrl: string, authToken: string) {
+  constructor(baseUrl: string, authToken: string, searchRequestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS) {
     this.baseUrl = baseUrl.replace(/\/$/, '');
     this.authToken = authToken;
+    this.searchRequestTimeoutMs = searchRequestTimeoutMs;
   }
 
   async search(query: string, limit = 5): Promise<SearchResult[]> {
@@ -62,7 +64,7 @@ class HttpApiClient implements ApiClient {
     }
 
     const params = new URLSearchParams({ query, limit: String(limit) });
-    const payload = await this.fetchJson<ServerSearchResult[]>(`/search?${params.toString()}`);
+    const payload = await this.fetchJson<ServerSearchResult[]>(`/search?${params.toString()}`, {}, { timeoutMs: this.searchRequestTimeoutMs });
     return payload.map((item) => ({
       id: item.id,
       title: item.title,
@@ -157,11 +159,11 @@ class HttpApiClient implements ApiClient {
   private async fetchJson<T>(
     path: string,
     init: RequestInit = {},
-    options: { allowNotFound?: boolean; expectNoContent?: boolean } = {}
+    options: { allowNotFound?: boolean; expectNoContent?: boolean; timeoutMs?: number } = {}
   ): Promise<T> {
-    const { allowNotFound = false, expectNoContent = false } = options;
+    const { allowNotFound = false, expectNoContent = false, timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS } = options;
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), DEFAULT_REQUEST_TIMEOUT_MS);
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
       const response = await fetch(`${this.baseUrl}${path}`, {
@@ -222,5 +224,5 @@ class HttpApiClient implements ApiClient {
 export const createApiClient = (): ApiClient => {
   const config = loadConfig();
   const token = config.apiToken ?? 'change-me';
-  return new HttpApiClient(config.apiBaseUrl, token);
+  return new HttpApiClient(config.apiBaseUrl, token, config.searchRequestTimeoutMs);
 };

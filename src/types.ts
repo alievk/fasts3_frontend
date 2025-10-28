@@ -77,6 +77,7 @@ export interface Config {
   statePath: string;
   searchLimit: number;
   searchPageSize: number;
+  searchRequestTimeoutMs: number;
   searchMinSizeBytes?: number;
   searchMaxSizeBytes?: number;
   redirectDbPath: string;

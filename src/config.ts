@@ -12,6 +12,7 @@ const DEFAULT_MIN_SIZE_GIB = 0.6;
 const DEFAULT_MAX_SIZE_GIB = 5;
 const DEFAULT_REDIRECT_PORT = 8787;
 const DEFAULT_REDIRECT_HOST = '0.0.0.0';
+const DEFAULT_SEARCH_TIMEOUT_MS = 10000;
 
 const parsePositiveInt = (value: string | undefined): number | undefined => {
   if (value === undefined) {
@@ -70,6 +71,7 @@ export const loadConfig = (): Config => {
   const redirectServerHost = process.env.TORRENT_REDIRECT_HOST ?? DEFAULT_REDIRECT_HOST;
   const redirectServerBaseUrl =
     process.env.TORRENT_REDIRECT_BASE_URL ?? `http://127.0.0.1:${redirectServerPort}`;
+  const searchRequestTimeoutMs = parsePositiveInt(process.env.TORRENT_SEARCH_REQUEST_TIMEOUT_MS) ?? DEFAULT_SEARCH_TIMEOUT_MS;
 
   return {
     apiBaseUrl: process.env.TORRENT_API_URL ?? DEFAULT_API_BASE_URL,
@@ -78,6 +80,7 @@ export const loadConfig = (): Config => {
     statePath: resolveStatePath(),
     searchLimit,
     searchPageSize,
+    searchRequestTimeoutMs,
     searchMinSizeBytes,
     searchMaxSizeBytes,
     redirectDbPath: resolveRedirectDbPath(),
