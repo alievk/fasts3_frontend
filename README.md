@@ -81,10 +81,13 @@ See `docs/redirect_server.md` for detailed API documentation and operational gui
 
 The static player lives in `public/player/index.html` and hydrates against `dist/player/main.js` (emitted by `npm run build`). Launch it with:
 
+- `?btih=<info-hash>` – fetches a presigned link from the redirect server (`/presigned/<btih>/info`) and streams it directly.
 - `?videoUrl=<https-url>` – direct HTTP(S) media link to stream in the browser.
 - Quick local hosting: `npm run serve-player` (wraps `npx http-server`) exposes the repo root at `http://localhost:8080`, so `/public/player/` and `/dist/player/main.js` load correctly.
 
 Host `public/` behind a static web server (or integrate with the redirect server) to let users stream or download files without exposing raw S3 URLs.
+
+The player queries presigned metadata from `http://ec2-16-170-209-29.eu-north-1.compute.amazonaws.com:8787`; update `REDIRECT_BASE_URL` in `src/player/PlayerApp.tsx` if your redirect server runs elsewhere.
 
 ## Data & Persistence
 

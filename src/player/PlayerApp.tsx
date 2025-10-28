@@ -1,5 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 
+const REDIRECT_BASE_URL = 'http://ec2-16-170-209-29.eu-north-1.compute.amazonaws.com:8787';
+
+if (typeof window !== 'undefined') {
+  console.log('[Player] bundle loaded');
+}
+
 type PlayerState =
   | { status: 'loading' }
   | { status: 'error'; message: string }
@@ -31,30 +37,163 @@ export const PlayerApp: React.FC = () => {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const rawUrl = params.get('videoUrl');
+    const btihParam = params.get('btih')?.trim() ?? '';
+    const rawUrl = params.get('videoUrl')?.trim() ?? '';
 
-    if (!rawUrl || rawUrl.trim().length === 0) {
-      setPlayerState({ status: 'error', message: 'Missing required videoUrl parameter.' });
-      return;
-    }
+    console.log('[Player] query params', { btih: btihParam || null, videoUrl: rawUrl || null });
 
-    try {
-      const normalized = new URL(rawUrl);
-      if (!['http:', 'https:'].includes(normalized.protocol)) {
-        setPlayerState({ status: 'error', message: 'videoUrl must be an HTTP or HTTPS link.' });
+    const resolveVideoUrl = (value: string): string => {
+      const trimmed = value.trim();
+      if (trimmed.length === 0) {
+        throw new Error('Missing required videoUrl parameter.');
+      }
+
+      try {
+        const normalized = new URL(trimmed);
+        if (!['http:', 'https:'].includes(normalized.protocol)) {
+          throw new Error('videoUrl must be an HTTP or HTTPS link.');
+        }
+        return normalized.toString();
+      } catch (error) {
+        if (error instanceof Error && error.message === 'videoUrl must be an HTTP or HTTPS link.') {
+          throw error;
+        }
+        throw new Error(`Invalid videoUrl parameter: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    };
+
+    const resolvePresignedUrl = async (btih: string): Promise<string> => {
+      const baseUrl = REDIRECT_BASE_URL;
+      let endpoint: URL;
+
+      try {
+        endpoint = new URL(`/presigned/${encodeURIComponent(btih)}/info`, baseUrl);
+      } catch (error) {
+        console.error('[Player] failed to compose presigned endpoint', error);
+        throw new Error(
+          `Invalid redirect base URL: ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
+
+      console.log('[Player] fetching presigned info', endpoint.toString());
+
+      let response: Response;
+      try {
+        response = await fetch(endpoint.toString());
+      } catch (error) {
+        console.error('[Player] network error while fetching presigned info', error);
+        throw new Error(`Network error while fetching presigned link: ${error instanceof Error ? error.message : String(error)}`);
+      }
+
+      if (!response.ok) {
+        console.error('[Player] presigned lookup failed', response.status, response.statusText);
+        throw new Error(`Presigned link lookup failed with status ${response.status}`);
+      }
+
+      let payload: unknown;
+      try {
+        payload = await response.json();
+      } catch (error) {
+        throw new Error(`Failed to parse presigned response: ${error instanceof Error ? error.message : String(error)}`);
+      }
+
+      const urlFromResponse =
+        payload && typeof (payload as { url?: unknown }).url === 'string'
+          ? (payload as { url: string }).url
+          : undefined;
+
+      if (!urlFromResponse) {
+        console.error('[Player] presigned payload missing url', payload);
+        throw new Error('Presigned response is missing url field.');
+      }
+
+      try {
+        const normalized = new URL(urlFromResponse);
+        if (!['http:', 'https:'].includes(normalized.protocol)) {
+          console.error('[Player] invalid protocol in presigned url', normalized.toString());
+          throw new Error('Presigned url must be an HTTP or HTTPS link.');
+        }
+        console.log('[Player] presigned url resolved', normalized.toString());
+        return normalized.toString();
+      } catch (error) {
+        if (error instanceof Error && error.message === 'Presigned url must be an HTTP or HTTPS link.') {
+          throw error;
+        }
+        throw new Error(`Invalid presigned url: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    };
+
+    const asMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
+    let cancelled = false;
+
+    const setReady = (url: string) => {
+      if (!cancelled) {
+        setPlayerState({
+          status: 'ready',
+          url
+        });
+        console.log('[Player] ready with url', url);
+      }
+    };
+
+    const setError = (message: string) => {
+      if (!cancelled) {
+        setPlayerState({
+          status: 'error',
+          message
+        });
+        console.error('[Player] error state', message);
+      }
+    };
+
+    const run = async (): Promise<void> => {
+      if (btihParam) {
+        try {
+          const resolved = await resolvePresignedUrl(btihParam);
+          setReady(resolved);
+          return;
+        } catch (error) {
+          if (rawUrl.length > 0) {
+            console.warn('[Player] btih lookup failed, attempting fallback videoUrl', error);
+            try {
+              const fallback = resolveVideoUrl(rawUrl);
+              setReady(fallback);
+              return;
+            } catch (fallbackError) {
+              console.error('[Player] fallback videoUrl failed', fallbackError);
+              setError(
+                `Unable to resolve btih ${btihParam}: ${asMessage(error)}. Fallback videoUrl failed: ${asMessage(fallbackError)}`
+              );
+              return;
+            }
+          }
+
+          console.error('[Player] btih resolution failed without fallback', error);
+          setError(`Unable to resolve btih ${btihParam}: ${asMessage(error)}`);
+          return;
+        }
+      }
+
+      if (rawUrl.length > 0) {
+        try {
+          const normalized = resolveVideoUrl(rawUrl);
+          setReady(normalized);
+        } catch (error) {
+          console.error('[Player] invalid videoUrl parameter', error);
+          setError(asMessage(error));
+        }
         return;
       }
 
-      setPlayerState({
-        status: 'ready',
-        url: normalized.toString()
-      });
-    } catch (error) {
-      setPlayerState({
-        status: 'error',
-        message: `Invalid videoUrl parameter: ${error instanceof Error ? error.message : String(error)}`
-      });
-    }
+      setError('Missing required btih or videoUrl parameter.');
+    };
+
+    void run();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
