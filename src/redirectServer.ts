@@ -14,6 +14,17 @@ export const createRedirectServer = () => {
     logger: false
   });
 
+  app.addHook('onRequest', async (request, reply) => {
+    const requestedHeaders = request.headers['access-control-request-headers'];
+    reply.header('Access-Control-Allow-Origin', '*');
+    reply.header('Access-Control-Allow-Methods', 'GET,HEAD,POST,DELETE,OPTIONS');
+    reply.header('Access-Control-Allow-Headers', requestedHeaders ?? 'Content-Type');
+
+    if (request.method === 'OPTIONS') {
+      return reply.status(204).send();
+    }
+  });
+
   app.addHook('onClose', async () => {
     registry.close();
   });

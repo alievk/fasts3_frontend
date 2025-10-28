@@ -6,10 +6,11 @@
   "scripts": {
     "cli": "tsx src/cli.tsx",
     "build": "tsc --project tsconfig.json",
-    "start": "node dist/index.js",
+    "start": "node dist/player/main.js",
     "lint": "tsc --noEmit",
     "bot": "tsx src/telegramBot.ts",
     "redirect-server": "tsx src/redirectServer.ts",
+    "serve-player": "npx http-server . -p 8080 --cors",
     "register-presign": "tsx src/registerPresignedLink.ts",
     "list-presigns": "tsx src/listPresignedLinks.ts"
   },

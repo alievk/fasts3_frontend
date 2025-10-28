@@ -11,6 +11,7 @@
 - Scripts:
   - `npm run list-presigns` -> `GET /admin/presigned`
   - `npm run register-presign <btih> <url> <expires>` -> `POST /admin/presigned`
+- CORS headers are emitted automatically, so the web player can query `/presigned/*` from a different origin/port.
 
 ## How Shortcuts Are Registered
 - `DownloadService.syncJob` refreshes presigned URLs for completed jobs when the cached link is missing or within five minutes of expiry (see `src/downloadService.ts`).
@@ -32,7 +33,7 @@
 ### Typical flow
 1. Backend completes a job and exposes `/api/jobs/{btih}/presign_link`.
 2. `DownloadService` retrieves the presign, then calls `POST /admin/presigned`.
-3. A client hits `/presigned/:btih` to follow the 302 redirect, or `/presigned/:btih/info` for metadata (used by the web player).
+3. A client hits `/presigned/:btih` to follow the 302 redirect, or `/presigned/:btih/info` for metadata.
 
 ## Common Issues
 - **Server offline or unreachable.** The registration request fails; check logs for `Failed to register redirect…` and restart the service.
