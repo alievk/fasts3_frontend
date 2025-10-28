@@ -8,17 +8,31 @@
 ## Runtime Basics
 - Launch with `npm run redirect-server`; host/port come from `TORRENT_REDIRECT_HOST` and `TORRENT_REDIRECT_PORT` (default `0.0.0.0:8787`).
 - Shortcut state is stored in `TORRENT_REDIRECT_DB_PATH` (default `.cache/torrent-cli/presigned.db`). Delete the file to clear the registry.
-- Key endpoints:
-  - `GET /health` — readiness probe.
-  - `GET /admin/presigned` — list active shortcuts (`npm run list-presigns` wraps this).
-  - `POST /admin/presigned` — create or refresh a shortcut.
-  - `DELETE /admin/presigned/:btih` — remove a shortcut.
+- Scripts:
+  - `npm run list-presigns` -> `GET /admin/presigned`
+  - `npm run register-presign <btih> <url> <expires>` -> `POST /admin/presigned`
 
 ## How Shortcuts Are Registered
 - `DownloadService.syncJob` refreshes presigned URLs for completed jobs when the cached link is missing or within five minutes of expiry (see `src/downloadService.ts`).
 - The poller revisits completed jobs missing redirect metadata, so restored downloads pick up shortcuts automatically.
 - After retrieving a presign (`/presign_link`), the service calls `POST /admin/presigned` and caches `redirectUrl`/`redirectExpiresAt` with the job.
 - Clients obtain the base URL from `TORRENT_REDIRECT_BASE_URL` (default `http://127.0.0.1:8787`) via `loadConfig()`; override it with a publicly reachable host when sharing links.
+
+## HTTP API
+
+| Method & Path | Description | Notes |
+| --- | --- | --- |
+| `GET /health` | Liveness/readiness probe. | Returns `{ "status": "ok", "registrySize": <number> }`. |
+| `GET /admin/presigned` | List all cached shortcuts. | Used by `npm run list-presigns`. Each entry contains `btih`, `url`, `expiresAt`, `createdAt`. |
+| `POST /admin/presigned` | Register or refresh a shortcut. | Body accepts `btih`, `url`, and either `expiresIn` (seconds) or `expiresAt` (ISO timestamp). Returns 400 on validation errors, 201 with persisted metadata on success. |
+| `DELETE /admin/presigned/:btih` | Remove a shortcut. | Returns 204 when removed, 404 if the entry does not exist. |
+| `GET /presigned/:btih/info` | Inspect metadata without redirecting. | Returns 200 with `status`, `btih`, `url`, `expiresAt`, `createdAt`. Responds 404 when missing and 410 when expired. |
+| `GET /presigned/:btih` | Follow the shortcut. | Responds with HTTP 302 to the active presigned URL. Returns 404 when missing, 410 when expired. |
+
+### Typical flow
+1. Backend completes a job and exposes `/api/jobs/{btih}/presign_link`.
+2. `DownloadService` retrieves the presign, then calls `POST /admin/presigned`.
+3. A client hits `/presigned/:btih` to follow the 302 redirect, or `/presigned/:btih/info` for metadata (used by the web player).
 
 ## Common Issues
 - **Server offline or unreachable.** The registration request fails; check logs for `Failed to register redirect…` and restart the service.

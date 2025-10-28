@@ -1,45 +1,104 @@
-# Frontend for torrent downloader
+# Torrent Frontend Toolkit
 
-Minimal Ink-based CLI that follows the structure from `.llm/plan.md` while calling the REST API described in `.llm/backend_spec.md`. Built with Ink 6 / React 18.
+Multi-channel frontend for the torrent downloader stack. The shared TypeScript service layer powers:
 
-## Getting Started
+- An Ink 6 CLI (`npm run cli`) for search/queue management.
+- A Telegram bot (`npm run bot`) that mirrors the same job state.
+- A Fastify redirect server (`npm run redirect-server`) backed by SQLite for durable presigned shortcuts.
+- Utility scripts to register/list presigned links and a lightweight browser player (`public/player`) that consumes redirect metadata.
 
-1. Install dependencies:
-   ```bash
-   npm install
-   ```
-2. Run the CLI in watch mode:
-   ```bash
-   npm run cli
-   ```
+The backend contract lives in `docs/backend_spec.md`.
 
-> **Note:** Configure `TORRENT_API_URL` (defaults to `https://mock.torrent-service.local`) and `TORRENT_API_TOKEN` for authenticated requests. Jobs persist locally under `.cache/torrent-cli/jobs.json` (override with `TORRENT_CLI_STATE_PATH`). Ink 6 requires Node.js 20+.
+## Prerequisites
+
+- Node.js 20+ (Ink 6 and `tsx` require the current LTS toolchain).
+- npm (bundled with Node).
+
+## Installation
+
+```bash
+npm install
+cp .env.example .env
+# edit .env with your API endpoint, token, and optional overrides
+```
+
+Environment variables are documented inline in `.env.example`; copy it and adjust values for your deployment.
+
+## Core Scripts
+
+| Command | Purpose |
+| --- | --- |
+| `npm run cli` | Start the Ink CLI via `tsx src/cli.tsx`. |
+| `npm run bot` | Launch the Telegram bot (requires `TORRENT_TELEGRAM_BOT_TOKEN`). |
+| `npm run redirect-server` | Serve presigned shortcuts and admin endpoints on the configured host/port. |
+| `npm run register-presign <btih> <url> <expires>` | Manually register or refresh a redirect entry (expires accepts seconds or ISO timestamp). |
+| `npm run list-presigns` | Inspect active shortcuts via the admin API. |
+| `npm run build` | Type-check and emit compiled JS to `dist/`. |
+| `npm run lint` | TypeScript strictness check (`tsc --noEmit`). |
+
+All runtime scripts load configuration from `loadConfig()` so the same `.env` drives CLI, bot, and redirect services.
+
+## CLI Experience
+
+```bash
+npm run cli
+```
+
+- Main menu exposes **Search**, **Jobs**, and **Exit**.
+- Type a query and press Enter to search; select a result to start a download job.
+- Jobs list displays progress, size, and status. Selecting a job opens detail view with delete/back actions.
+- Completed jobs expose their redirect URL, direct S3 link (when available), and allow copying the link with the `c` shortcut.
+- Errors surface at the bottom of the UI; fix configuration or backend issues and retry with Enter.
+
+Local state persists under `TORRENT_CLI_STATE_PATH`, so jobs survive restarts. The poller keeps queued/downloading jobs in sync and refreshes presigned links as they near expiry.
 
 ## Telegram Bot
 
-1. Export your bot token along with the existing API variables:
-   ```bash
-   export TORRENT_TELEGRAM_BOT_TOKEN=<bot-token>
-   ```
-2. Launch the bot:
-   ```bash
-   npm run bot
-   ```
+```bash
+export TORRENT_TELEGRAM_BOT_TOKEN=<bot-token>
+npm run bot
+```
 
-The bot reuses the shared service layer, so job state stays in sync with the CLI (same cache path, polling, and backend configuration).
+- `ensureBootstrapped()` loads cached jobs, performs a backend health check, and starts the shared poller.
+- `/search <query>` responds with paginated inline buttons; tapping a result triggers download creation.
+- `/jobs` lists known jobs with detail/delete actions; updates broadcast to active chats.
+- Redirect links surface automatically once the backend exposes a presigned URL.
 
-- `/search <query>` — search torrents and start downloads from inline results.
-- `/jobs` — list saved jobs with buttons to view details or delete them.
+The bot uses the same job store and download service as the CLI, so both interfaces remain consistent.
 
-## Current Behaviour
+## Redirect Server & Presigned Shortcuts
 
-- Search for torrents by typing a query and pressing `Enter`; results come from the configured backend.
-- Select a torrent to create a download job. Jobs appear in the tracker with progress as the backend updates them.
-- Polling refreshes each job automatically; completed jobs show the provided S3 link.
-- Use arrow keys to highlight a job and press `D` to delete it locally and on the backend.
+```bash
+npm run redirect-server
+```
 
-## Next Steps
+- Stores shortcut state in SQLite (`TORRENT_REDIRECT_DB_PATH`) and exposes admin/user endpoints for creating and following presigned link shortcuts.
+- `DownloadService.syncJob()` registers or refreshes shortcuts automatically when jobs complete, provided the redirect server is reachable.
 
-- Add smarter polling/backoff once backend limits and error patterns are clearer.
-- Share the service layer (`downloadService`, `jobStore`) with incoming Telegram and web frontends.
-- Polish the Ink UI with richer status messaging and shortcuts (open S3 link, retry actions).
+See `docs/redirect_server.md` for detailed API documentation and operational guidance.
+
+## Browser Player
+
+The static player lives in `public/player/index.html` and hydrates against `dist/player/main.js` (emitted by `npm run build`). It accepts:
+
+- `?btih=<btih>` – fetches shortcut metadata from `/presigned/<btih>/info`.
+- `?s3Url=<direct-url>` – skips metadata lookup and plays a presigned URL directly.
+
+Host `public/` behind a static web server (or integrate with the redirect server) to let users stream or download files without exposing raw S3 URLs.
+
+## Data & Persistence
+
+- Jobs: JSON file at `TORRENT_CLI_STATE_PATH` (default `.cache/torrent-cli/jobs.json`) written atomically.
+- Redirect registry: SQLite database at `TORRENT_REDIRECT_DB_PATH`.
+- Cached presigns/redirect metadata refresh automatically when the presigned link is within five minutes of expiry.
+
+Delete the cache files if you need a clean slate; directories are created on demand.
+
+## Documentation & Further Work
+
+- REST API contract: `docs/backend_spec.md`
+- Ink/service architecture notes: `docs/plan.md`
+- Redirect operations guide: `docs/redirect_server.md`
+- Setup notes: `docs/notes.md`
+
+Planned improvements include smarter polling/backoff, richer CLI shortcuts, and packaging the shared service layer for reuse by additional frontends.
