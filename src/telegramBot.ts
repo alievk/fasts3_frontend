@@ -19,7 +19,13 @@ const config = loadConfig();
 const apiClient = createApiClient();
 const jobStore = new JobStore(config.statePath);
 const searchPipeline = createSearchPipeline(config);
-const downloadService = new DownloadService(apiClient, jobStore, config.searchLimit, searchPipeline);
+const downloadService = new DownloadService(
+  apiClient,
+  jobStore,
+  config.searchLimit,
+  searchPipeline,
+  config.redirectServerBaseUrl
+);
 const poller = new Poller(downloadService, config.pollingIntervalMs);
 const bot = new Telegraf(botToken);
 
@@ -149,6 +155,7 @@ const formatDateTime = (primary: string | Date | null | undefined, fallback?: Da
 
 const formatJobDetail = (job: StoredJob): string => {
   const lastUpdated = formatDateTime(job.lastSyncedAt ?? null);
+  const downloadLink = job.redirectUrl ?? job.s3Url;
   const lines = [
     `Title: ${job.label ?? job.btih}`,
     `BTIH: ${job.btih}`,
@@ -161,7 +168,8 @@ const formatJobDetail = (job: StoredJob): string => {
           : `${Math.round(job.progress * 100)}%`
     }`,
     `Size: ${formatSize(job.sizeBytes ?? null)}`,
-    job.s3Url ? `S3 link: ${job.s3Url}` : undefined,
+    downloadLink ? `Download: ${downloadLink}` : undefined,
+    job.redirectUrl && job.s3Url ? `Direct S3: ${job.s3Url}` : undefined,
     job.error ? `Error: ${job.error}` : undefined,
     `Last update: ${lastUpdated}`
   ];
@@ -209,8 +217,9 @@ const buildSearchPage = (results: SearchResult[], requestedPage: number) => {
 
 const buildJobActionsKeyboard = (job: StoredJob) => {
   const encodedId = encodeURIComponent(job.btih);
+  const downloadLink = job.redirectUrl ?? job.s3Url;
   const buttons = [
-    job.s3Url ? Markup.button.url('Open link', job.s3Url) : undefined,
+    downloadLink ? Markup.button.url('Open link', downloadLink) : undefined,
     Markup.button.callback('Refresh', `refresh:${encodedId}`),
     Markup.button.callback('Delete', `delete:${encodedId}`)
   ].filter(Boolean) as Parameters<typeof Markup.inlineKeyboard>[0];
@@ -399,7 +408,9 @@ downloadService.on('ready', (jobs) => {
 downloadService.on('jobUpdated', (job) => {
   const previous = trackedJobs.get(job.btih);
   const statusChanged = !previous || previous.lastKnownStatus !== job.lastKnownStatus;
-  const linkReady = !previous?.s3Url && !!job.s3Url;
+  const previousLink = previous?.redirectUrl ?? previous?.s3Url;
+  const currentLink = job.redirectUrl ?? job.s3Url;
+  const linkReady = !previousLink && !!currentLink;
   trackedJobs.set(job.btih, job);
   if (!statusChanged && !linkReady) {
     return;
@@ -409,7 +420,7 @@ downloadService.on('jobUpdated', (job) => {
       `Job update: ${job.label ?? job.btih}`,
       `Status: ${job.lastKnownStatus}`,
       job.progress !== null ? `Progress: ${Math.round(job.progress * 100)}%` : undefined,
-      job.s3Url ? `S3 link: ${job.s3Url}` : undefined
+      currentLink ? `Download: ${currentLink}` : undefined
     ]
       .filter(Boolean)
       .join('\n')

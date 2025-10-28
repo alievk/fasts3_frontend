@@ -318,18 +318,18 @@ const JobDetailScreen: React.FC<JobDetailScreenProps> = ({ job, focus, onBack, o
       if (input.toLowerCase() !== 'c') {
         return;
       }
-      const link = job.s3Url;
+      const link = job.redirectUrl ?? job.s3Url;
       if (!link) {
-        setCopyFeedback({ status: 'error', message: 'No S3 link available yet.' });
+        setCopyFeedback({ status: 'error', message: 'No download link available yet.' });
         return;
       }
       void (async () => {
         try {
           await clipboard.write(link);
-          setCopyFeedback({ status: 'success', message: 'Copied S3 link to clipboard.' });
+          setCopyFeedback({ status: 'success', message: 'Copied download link to clipboard.' });
         } catch (error) {
           const message = error instanceof Error ? error.message : 'clipboard unavailable.';
-          setCopyFeedback({ status: 'error', message: `Failed to copy link: ${message}` });
+          setCopyFeedback({ status: 'error', message: `Failed to copy download link: ${message}` });
         }
       })();
     },
@@ -364,7 +364,8 @@ const JobDetailScreen: React.FC<JobDetailScreenProps> = ({ job, focus, onBack, o
           ? `${(job.sizeBytes / (1024 * 1024 * 1024)).toFixed(2)} GiB`
           : 'Unknown'}
       </Text>
-      <Text>S3: {job.s3Url ?? '—'}</Text>
+      <Text>Download: {job.redirectUrl ?? job.s3Url ?? '—'}</Text>
+      {job.redirectUrl && job.s3Url && <Text color="gray">Direct S3: {job.s3Url}</Text>}
       {copyFeedback && (
         <Text color={copyFeedback.status === 'success' ? 'green' : 'red'}>
           {copyFeedback.message}
@@ -401,7 +402,7 @@ const JobDetailScreen: React.FC<JobDetailScreenProps> = ({ job, focus, onBack, o
         }}
       />
       {isDeleting && <Text color="gray">Deleting…</Text>}
-      {job.s3Url && <Text color="gray">Press C to copy the S3 link.</Text>}
+      {(job.redirectUrl || job.s3Url) && <Text color="gray">Press C to copy the download link.</Text>}
       <Text color="gray">Use ↑/↓ to choose, Enter to confirm.</Text>
       <Text color="gray">Use ← to go back to jobs.</Text>
     </Box>

@@ -63,11 +63,12 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ jobs, onRemove, disabled
         const status = job.lastKnownStatus;
         const progress = formatProgress(job.progress, status);
         const line = `${status.padEnd(11)} ${progress.padEnd(5)} ${job.label ?? job.btih}`;
+        const link = job.redirectUrl ?? job.s3Url;
         return (
           <Text key={job.btih} color={isSelected ? 'green' : undefined}>
             {isSelected ? '➤ ' : '  '}
             {line}
-            {job.s3Url ? ` → ${job.s3Url}` : ''}
+            {link ? ` → ${link}` : ''}
           </Text>
         );
       })}

@@ -80,7 +80,7 @@ export const PlayerApp: React.FC = () => {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const btih = params.get('btih') ?? params.get('jobId');
+    const btih = params.get('btih');
     const directUrlParam = params.get('s3Url');
 
     if (btih) {

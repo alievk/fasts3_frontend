@@ -42,6 +42,9 @@ export interface StoredJob {
   s3ObjectKey?: string | null;
   manifest?: string | null;
   s3Url?: string | null;
+  presignExpiresAt?: string | null;
+  redirectUrl?: string | null;
+  redirectExpiresAt?: string | null;
   error?: string | null;
   sizeBytes?: number | null;
 }

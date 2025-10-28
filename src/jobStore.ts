@@ -38,12 +38,8 @@ const normalizeJobStoreData = (input: unknown): JobStoreData => {
 
     const entity = rawJob as Record<string, unknown>;
     const rawBtih = entity.btih;
-    const rawJobId = entity.jobId;
     const btih =
-      (typeof rawBtih === 'string' && rawBtih.trim()) ||
-      (typeof rawJobId === 'string' && rawJobId.trim()) ||
-      (typeof key === 'string' && key.trim()) ||
-      null;
+      (typeof rawBtih === 'string' && rawBtih.trim()) || (typeof key === 'string' && key.trim()) || null;
 
     if (!btih) {
       continue;
@@ -59,6 +55,11 @@ const normalizeJobStoreData = (input: unknown): JobStoreData => {
     const s3ObjectKey = typeof entity.s3ObjectKey === 'string' ? (entity.s3ObjectKey as string) : null;
     const manifest = typeof entity.manifest === 'string' ? (entity.manifest as string) : null;
     const s3Url = typeof entity.s3Url === 'string' ? (entity.s3Url as string) : null;
+    const presignExpiresAt =
+      typeof entity.presignExpiresAt === 'string' ? (entity.presignExpiresAt as string) : null;
+    const redirectUrl = typeof entity.redirectUrl === 'string' ? (entity.redirectUrl as string) : null;
+    const redirectExpiresAt =
+      typeof entity.redirectExpiresAt === 'string' ? (entity.redirectExpiresAt as string) : null;
     const error = typeof entity.error === 'string' ? (entity.error as string) : null;
     const sizeBytes =
       typeof entity.sizeBytes === 'number' && Number.isFinite(entity.sizeBytes) ? (entity.sizeBytes as number) : null;
@@ -74,6 +75,9 @@ const normalizeJobStoreData = (input: unknown): JobStoreData => {
       s3ObjectKey,
       manifest,
       s3Url,
+      presignExpiresAt,
+      redirectUrl,
+      redirectExpiresAt,
       error,
       sizeBytes
     };

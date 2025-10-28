@@ -9,6 +9,8 @@ type DownloadServiceEvents = {
   ready: (jobs: StoredJob[]) => void;
 };
 
+const PRESIGNED_REFRESH_THRESHOLD_MS = 5 * 60 * 1000;
+
 const mapDetailToStored = (detail: JobDetail, existing?: StoredJob): StoredJob => ({
   btih: detail.btih,
   label: detail.label ?? existing?.label ?? null,
@@ -20,6 +22,9 @@ const mapDetailToStored = (detail: JobDetail, existing?: StoredJob): StoredJob =
   s3ObjectKey: detail.s3ObjectKey ?? existing?.s3ObjectKey ?? null,
   manifest: detail.manifest ?? existing?.manifest ?? null,
   s3Url: existing?.s3Url ?? null,
+  presignExpiresAt: existing?.presignExpiresAt ?? null,
+  redirectUrl: existing?.redirectUrl ?? null,
+  redirectExpiresAt: existing?.redirectExpiresAt ?? null,
   error: detail.error ?? null,
   sizeBytes: detail.sizeBytes ?? existing?.sizeBytes ?? null
 });
@@ -44,6 +49,9 @@ const newStoredJob = (
   s3ObjectKey,
   manifest,
   s3Url: null,
+  presignExpiresAt: null,
+  redirectUrl: null,
+  redirectExpiresAt: null,
   error: null,
   sizeBytes: sizeBytes ?? null
 });
@@ -155,20 +163,49 @@ export class DownloadService extends EventEmitter {
       const existing = this.jobs.get(btih);
       let updated = mapDetailToStored(detail, existing ?? undefined);
 
-      if (detail.status === 'completed' && !updated.s3Url) {
-        try {
-          const link = await this.apiClient.getJobPresignedLink(btih);
-          if (link?.s3Url) {
-            updated = {
-              ...updated,
-              s3Url: link.s3Url,
-              s3Bucket: updated.s3Bucket ?? link.bucket,
-              s3ObjectKey: updated.s3ObjectKey ?? link.key
-            };
-            await this.registerRedirect(btih, link.s3Url, link.expiresIn);
+      if (detail.status === 'completed') {
+        const needsPresignRefresh = this.shouldRefreshPresignedLink(existing);
+        if (needsPresignRefresh) {
+          try {
+            const link = await this.apiClient.getJobPresignedLink(btih);
+            if (link?.s3Url) {
+              const expiresAt = new Date(Date.now() + link.expiresIn * 1000);
+              updated = {
+                ...updated,
+                s3Url: link.s3Url,
+                s3Bucket: updated.s3Bucket ?? link.bucket,
+                s3ObjectKey: updated.s3ObjectKey ?? link.key,
+                presignExpiresAt: expiresAt.toISOString()
+              };
+              const redirectMetadata = await this.registerRedirect(btih, link.s3Url, expiresAt);
+              if (redirectMetadata) {
+                updated = {
+                  ...updated,
+                  redirectUrl: redirectMetadata.redirectUrl,
+                  redirectExpiresAt: redirectMetadata.expiresAt
+                };
+              }
+            }
+          } catch (error) {
+            this.emit('error', error instanceof Error ? error : new Error(String(error)));
           }
-        } catch (error) {
-          this.emit('error', error instanceof Error ? error : new Error(String(error)));
+        } else if (
+          this.redirectBaseUrl &&
+          this.shouldRenewRedirect(existing) &&
+          updated.s3Url &&
+          updated.presignExpiresAt
+        ) {
+          const expiresAt = new Date(updated.presignExpiresAt);
+          if (!Number.isNaN(expiresAt.getTime())) {
+            const redirectMetadata = await this.registerRedirect(btih, updated.s3Url, expiresAt);
+            if (redirectMetadata) {
+              updated = {
+                ...updated,
+                redirectUrl: redirectMetadata.redirectUrl,
+                redirectExpiresAt: redirectMetadata.expiresAt
+              };
+            }
+          }
         }
       }
 
@@ -181,11 +218,21 @@ export class DownloadService extends EventEmitter {
   }
 
   async syncAll(): Promise<void> {
-    const activeJobs = this.getJobs().filter((job) => job.lastKnownStatus === 'queued' || job.lastKnownStatus === 'downloading');
-    if (activeJobs.length === 0) {
+    const jobsToSync = this.getJobs().filter((job) => {
+      if (job.lastKnownStatus === 'queued' || job.lastKnownStatus === 'downloading') {
+        return true;
+      }
+      if (job.lastKnownStatus === 'completed') {
+        const needsPresign = this.shouldRefreshPresignedLink(job);
+        const needsRedirect = this.redirectBaseUrl ? this.shouldRenewRedirect(job) : false;
+        return needsPresign || needsRedirect;
+      }
+      return false;
+    });
+    if (jobsToSync.length === 0) {
       return;
     }
-    await Promise.all(activeJobs.map((job) => this.syncJob(job.btih)));
+    await Promise.all(jobsToSync.map((job) => this.syncJob(job.btih)));
   }
 
   async remove(btih: string): Promise<void> {
@@ -220,20 +267,65 @@ export class DownloadService extends EventEmitter {
     return current;
   }
 
-  private async registerRedirect(btih: string, url: string, expiresInSeconds: number): Promise<void> {
+  private shouldRefreshPresignedLink(job: StoredJob | undefined): boolean {
+    if (!job) {
+      return true;
+    }
+    if (!job.s3Url) {
+      return true;
+    }
+
+    if (!job.presignExpiresAt) {
+      return true;
+    }
+
+    const expiresAt = Date.parse(job.presignExpiresAt);
+    if (Number.isNaN(expiresAt)) {
+      return true;
+    }
+
+    return expiresAt - Date.now() <= PRESIGNED_REFRESH_THRESHOLD_MS;
+  }
+
+  private shouldRenewRedirect(job: StoredJob | undefined): boolean {
+    if (!job) {
+      return true;
+    }
+    if (!job.redirectUrl) {
+      return true;
+    }
+
+    if (!job.redirectExpiresAt) {
+      return true;
+    }
+
+    const expiresAt = Date.parse(job.redirectExpiresAt);
+    if (Number.isNaN(expiresAt)) {
+      return true;
+    }
+
+    return expiresAt - Date.now() <= PRESIGNED_REFRESH_THRESHOLD_MS;
+  }
+
+  private async registerRedirect(
+    btih: string,
+    url: string,
+    expiresAt: Date
+  ): Promise<{ redirectUrl: string; expiresAt: string } | undefined> {
     if (!this.redirectBaseUrl) {
-      return;
+      return undefined;
     }
 
     try {
       const endpoint = new URL('/admin/presigned', this.redirectBaseUrl);
+      const isoExpiry = expiresAt.toISOString();
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           btih,
           url,
-          expiresIn: expiresInSeconds
+          expiresAt: isoExpiry
         })
       });
 
@@ -245,9 +337,16 @@ export class DownloadService extends EventEmitter {
           }`
         );
       }
+
+      const redirectUrl = new URL(`/presigned/${encodeURIComponent(btih)}`, this.redirectBaseUrl).toString();
+      return {
+        redirectUrl,
+        expiresAt: isoExpiry
+      };
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
       this.emit('error', err);
+      return undefined;
     }
   }
 
