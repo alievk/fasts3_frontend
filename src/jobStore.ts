@@ -55,6 +55,9 @@ const normalizeJobStoreData = (input: unknown): JobStoreData => {
     const lastSyncedAt = typeof entity.lastSyncedAt === 'string' ? entity.lastSyncedAt : createdAt;
     const progress =
       typeof entity.progress === 'number' && Number.isFinite(entity.progress) ? (entity.progress as number) : null;
+    const s3Bucket = typeof entity.s3Bucket === 'string' ? (entity.s3Bucket as string) : null;
+    const s3ObjectKey = typeof entity.s3ObjectKey === 'string' ? (entity.s3ObjectKey as string) : null;
+    const manifest = typeof entity.manifest === 'string' ? (entity.manifest as string) : null;
     const s3Url = typeof entity.s3Url === 'string' ? (entity.s3Url as string) : null;
     const error = typeof entity.error === 'string' ? (entity.error as string) : null;
     const sizeBytes =
@@ -67,6 +70,9 @@ const normalizeJobStoreData = (input: unknown): JobStoreData => {
       lastKnownStatus,
       lastSyncedAt,
       progress,
+      s3Bucket,
+      s3ObjectKey,
+      manifest,
       s3Url,
       error,
       sizeBytes

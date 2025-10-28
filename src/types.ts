@@ -20,6 +20,9 @@ export interface JobDetail {
   sizeBytes?: number | null;
   updatedAt: string;
   label?: string | null;
+  s3Bucket?: string | null;
+  s3ObjectKey?: string | null;
+  manifest?: string | null;
   error?: string | null;
 }
 
@@ -35,6 +38,9 @@ export interface StoredJob {
   lastKnownStatus: JobStatus;
   lastSyncedAt: string;
   progress: number | null;
+  s3Bucket?: string | null;
+  s3ObjectKey?: string | null;
+  manifest?: string | null;
   s3Url?: string | null;
   error?: string | null;
   sizeBytes?: number | null;
@@ -56,6 +62,9 @@ export interface CreateJobResponse {
   btih: string;
   status: JobStatus;
   createdAt: string;
+  s3Bucket: string | null;
+  s3ObjectKey: string | null;
+  manifest: string | null;
 }
 
 export interface Config {

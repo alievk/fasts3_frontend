@@ -16,6 +16,9 @@ const mapDetailToStored = (detail: JobDetail, existing?: StoredJob): StoredJob =
   lastKnownStatus: detail.status,
   lastSyncedAt: detail.updatedAt,
   progress: detail.progress ?? existing?.progress ?? null,
+  s3Bucket: detail.s3Bucket ?? existing?.s3Bucket ?? null,
+  s3ObjectKey: detail.s3ObjectKey ?? existing?.s3ObjectKey ?? null,
+  manifest: detail.manifest ?? existing?.manifest ?? null,
   s3Url: existing?.s3Url ?? null,
   error: detail.error ?? null,
   sizeBytes: detail.sizeBytes ?? existing?.sizeBytes ?? null
@@ -26,7 +29,10 @@ const newStoredJob = (
   label: string | undefined,
   status: JobStatus,
   createdAt: string,
-  sizeBytes: number | undefined
+  sizeBytes: number | undefined,
+  s3Bucket: string | null,
+  s3ObjectKey: string | null,
+  manifest: string | null
 ): StoredJob => ({
   btih,
   label: label ?? null,
@@ -34,6 +40,9 @@ const newStoredJob = (
   lastKnownStatus: status,
   lastSyncedAt: createdAt,
   progress: status === 'completed' ? 1 : 0,
+  s3Bucket,
+  s3ObjectKey,
+  manifest,
   s3Url: null,
   error: null,
   sizeBytes: sizeBytes ?? null
@@ -102,10 +111,22 @@ export class DownloadService extends EventEmitter {
   async startDownload(result: SearchResult): Promise<StoredJob> {
     try {
       const response = await this.apiClient.createJob(result.magnet, result.title);
-      const stored = newStoredJob(response.btih, result.title, response.status, response.createdAt, result.sizeBytes);
+      const stored = newStoredJob(
+        response.btih,
+        result.title,
+        response.status,
+        response.createdAt,
+        result.sizeBytes,
+        response.s3Bucket,
+        response.s3ObjectKey,
+        response.manifest
+      );
       this.jobs.set(stored.btih, stored);
       await this.jobStore.upsert(stored);
       this.emit('jobUpdated', stored);
+      if (response.status === 'completed' || response.status === 'error') {
+        await this.syncJob(response.btih);
+      }
       return stored;
     } catch (error) {
       this.emit('error', error instanceof Error ? error : new Error(String(error)));
@@ -138,7 +159,12 @@ export class DownloadService extends EventEmitter {
         try {
           const link = await this.apiClient.getJobPresignedLink(btih);
           if (link?.s3Url) {
-            updated = { ...updated, s3Url: link.s3Url };
+            updated = {
+              ...updated,
+              s3Url: link.s3Url,
+              s3Bucket: updated.s3Bucket ?? link.bucket,
+              s3ObjectKey: updated.s3ObjectKey ?? link.key
+            };
             await this.registerRedirect(btih, link.s3Url, link.expiresIn);
           }
         } catch (error) {

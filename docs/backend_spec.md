@@ -67,12 +67,16 @@ Assume deployments under `https://<host>/api`. Paths below use this base.
 {
   "btih": "1f6bf62b2f6c4a72b7c84df5971e2b5b7c84df5",
   "status": "queued",
+  "s3_bucket": null,
+  "s3_object_key": null,
+  "manifest": null,
   "created_at": "2025-10-13T15:12:31.123Z"
 }
 ```
 
 - `status` must be one of `queued | downloading | completed | error`.
-- When a torrent with the same BTIH was previously uploaded, the response comes back immediately with `status: "completed"` and the stored S3 location instead of queuing a duplicate download.
+- When a torrent with the same BTIH was previously uploaded, the response comes back immediately with `status: "completed"` and the cached `s3_bucket`/`s3_object_key` instead of queuing a duplicate download.
+- `manifest` is a location hint, not the manifest payload. When the worker stores the job locally it is the filesystem path (e.g. `/app/data/jobs/<btih>/manifest.json`). After an S3 upload it switches to the object key (e.g. `jobs/<btih>/manifest.json`). Fetch the actual manifest JSON via the presign endpoint.
 
 ### 4. Get Job Status
 `GET /api/jobs/{btih}`
@@ -83,6 +87,9 @@ Assume deployments under `https://<host>/api`. Paths below use this base.
   "btih": "1f6bf62b2f6c4a72b7c84df5971e2b5b7c84df5",
   "status": "downloading",
   "progress": 0.42,
+  "s3_bucket": null,
+  "s3_object_key": null,
+  "manifest": null,
   "updated_at": "2025-10-13T15:24:01.591Z",
   "error": null
 }
@@ -90,6 +97,8 @@ Assume deployments under `https://<host>/api`. Paths below use this base.
 
 Field notes:
 - `progress` in `[0,1]`, may be `null` if unknown.
+- `s3_bucket`, `s3_object_key`, and `manifest` populate once the upload finishes (cached BTIHs return them immediately).
+- The presign endpoint still returns the actual manifest/content; treat `manifest` here as a pointer only.
 - No download link is returned; clients must call `/api/jobs/{btih}/presign_link` to fetch a presigned URL once the job is completed.
 - `error` string recommended when `status == "error"`.
 

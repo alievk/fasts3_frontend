@@ -16,6 +16,9 @@ interface ServerCreateJobResponse {
   btih: string;
   status: string;
   created_at: string;
+  s3_bucket: string | null;
+  s3_object_key: string | null;
+  manifest: string | null;
 }
 
 interface ServerHealthResponse {
@@ -30,6 +33,9 @@ interface ServerJobDetail {
   size_bytes?: number | null;
   updated_at: string;
   label?: string | null;
+  s3_bucket?: string | null;
+  s3_object_key?: string | null;
+  manifest?: string | null;
   error?: string | null;
 }
 
@@ -78,7 +84,10 @@ class HttpApiClient implements ApiClient {
     return {
       btih: payload.btih,
       status: this.normalizeStatus(payload.status),
-      createdAt: payload.created_at
+      createdAt: payload.created_at,
+      s3Bucket: payload.s3_bucket,
+      s3ObjectKey: payload.s3_object_key,
+      manifest: payload.manifest
     };
   }
 
@@ -96,6 +105,9 @@ class HttpApiClient implements ApiClient {
       sizeBytes: result.size_bytes ?? null,
       updatedAt: result.updated_at,
       label: result.label ?? null,
+      s3Bucket: result.s3_bucket ?? null,
+      s3ObjectKey: result.s3_object_key ?? null,
+      manifest: result.manifest ?? null,
       error: result.error ?? null
     };
   }
