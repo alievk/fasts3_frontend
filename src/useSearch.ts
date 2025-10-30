@@ -17,12 +17,14 @@ export const useSearch = (): UseSearchState => {
   const { downloadService } = useServices();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
+  const [resultsQuery, setResultsQuery] = useState<string | undefined>();
   const [isSearching, setIsSearching] = useState(false);
   const [lastError, setLastError] = useState<string | undefined>();
 
   const runSearch = useCallback(async () => {
     if (!query.trim()) {
       setResults([]);
+      setResultsQuery(undefined);
       return;
     }
 
@@ -31,6 +33,7 @@ export const useSearch = (): UseSearchState => {
     try {
       const found = await downloadService.search(query);
       setResults(found);
+      setResultsQuery(query);
     } catch (error) {
       setLastError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -41,11 +44,23 @@ export const useSearch = (): UseSearchState => {
   const reset = () => {
     setResults([]);
     setQuery('');
+    setResultsQuery(undefined);
   };
+
+  const updateQuery = useCallback(
+    (value: string) => {
+      setQuery(value);
+      if (value !== resultsQuery) {
+        setResults([]);
+        setResultsQuery(undefined);
+      }
+    },
+    [resultsQuery]
+  );
 
   return {
     query,
-    setQuery,
+    setQuery: updateQuery,
     results,
     isSearching,
     search: runSearch,
