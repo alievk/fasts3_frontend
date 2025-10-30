@@ -155,7 +155,7 @@ const formatDateTime = (primary: string | Date | null | undefined, fallback?: Da
 
 const formatJobDetail = (job: StoredJob): string => {
   const lastUpdated = formatDateTime(job.lastSyncedAt ?? null);
-  const downloadLink = job.redirectUrl ?? job.s3Url;
+  const downloadLink = job.redirectUrl;
   const lines = [
     `Title: ${job.label ?? job.btih}`,
     `BTIH: ${job.btih}`,
@@ -169,7 +169,6 @@ const formatJobDetail = (job: StoredJob): string => {
     }`,
     `Size: ${formatSize(job.sizeBytes ?? null)}`,
     downloadLink ? `Download: ${downloadLink}` : undefined,
-    job.redirectUrl && job.s3Url ? `Direct S3: ${job.s3Url}` : undefined,
     job.error ? `Error: ${job.error}` : undefined,
     `Last update: ${lastUpdated}`
   ];
@@ -217,7 +216,7 @@ const buildSearchPage = (results: SearchResult[], requestedPage: number) => {
 
 const buildJobActionsKeyboard = (job: StoredJob) => {
   const encodedId = encodeURIComponent(job.btih);
-  const downloadLink = job.redirectUrl ?? job.s3Url;
+  const downloadLink = job.redirectUrl;
   const buttons = [
     downloadLink ? Markup.button.url('Open link', downloadLink) : undefined,
     Markup.button.callback('Refresh', `refresh:${encodedId}`),
@@ -408,8 +407,8 @@ downloadService.on('ready', (jobs) => {
 downloadService.on('jobUpdated', (job) => {
   const previous = trackedJobs.get(job.btih);
   const statusChanged = !previous || previous.lastKnownStatus !== job.lastKnownStatus;
-  const previousLink = previous?.redirectUrl ?? previous?.s3Url;
-  const currentLink = job.redirectUrl ?? job.s3Url;
+  const previousLink = previous?.redirectUrl ?? null;
+  const currentLink = job.redirectUrl ?? null;
   const linkReady = !previousLink && !!currentLink;
   trackedJobs.set(job.btih, job);
   if (!statusChanged && !linkReady) {

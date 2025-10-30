@@ -318,7 +318,7 @@ const JobDetailScreen: React.FC<JobDetailScreenProps> = ({ job, focus, onBack, o
       if (input.toLowerCase() !== 'c') {
         return;
       }
-      const link = job.redirectUrl ?? job.s3Url;
+      const link = job.redirectUrl;
       if (!link) {
         setCopyFeedback({ status: 'error', message: 'No download link available yet.' });
         return;
@@ -364,8 +364,7 @@ const JobDetailScreen: React.FC<JobDetailScreenProps> = ({ job, focus, onBack, o
           ? `${(job.sizeBytes / (1024 * 1024 * 1024)).toFixed(2)} GiB`
           : 'Unknown'}
       </Text>
-      <Text>Download: {job.redirectUrl ?? job.s3Url ?? '—'}</Text>
-      {job.redirectUrl && job.s3Url && <Text color="gray">Direct S3: {job.s3Url}</Text>}
+      <Text>Download: {job.redirectUrl ?? '—'}</Text>
       {copyFeedback && (
         <Text color={copyFeedback.status === 'success' ? 'green' : 'red'}>
           {copyFeedback.message}
@@ -402,7 +401,7 @@ const JobDetailScreen: React.FC<JobDetailScreenProps> = ({ job, focus, onBack, o
         }}
       />
       {isDeleting && <Text color="gray">Deleting…</Text>}
-      {(job.redirectUrl || job.s3Url) && <Text color="gray">Press C to copy the download link.</Text>}
+      {job.redirectUrl && <Text color="gray">Press C to copy the download link.</Text>}
       <Text color="gray">Use ↑/↓ to choose, Enter to confirm.</Text>
       <Text color="gray">Use ← to go back to jobs.</Text>
     </Box>
