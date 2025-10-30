@@ -219,7 +219,11 @@ export class DownloadService extends EventEmitter {
 
   async syncAll(): Promise<void> {
     const jobsToSync = this.getJobs().filter((job) => {
-      if (job.lastKnownStatus === 'queued' || job.lastKnownStatus === 'downloading') {
+      if (
+        job.lastKnownStatus === 'queued' ||
+        job.lastKnownStatus === 'downloading' ||
+        job.lastKnownStatus === 'uploading'
+      ) {
         return true;
       }
       if (job.lastKnownStatus === 'completed') {

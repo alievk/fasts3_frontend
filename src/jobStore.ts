@@ -18,7 +18,7 @@ const writeAtomic = async (filePath: string, contents: string): Promise<void> =>
 };
 
 const isJobStatus = (value: unknown): value is JobStatus =>
-  value === 'queued' || value === 'downloading' || value === 'completed' || value === 'error';
+  value === 'queued' || value === 'downloading' || value === 'uploading' || value === 'completed' || value === 'error';
 
 const normalizeJobStoreData = (input: unknown): JobStoreData => {
   if (!input || typeof input !== 'object') {

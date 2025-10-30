@@ -148,6 +148,7 @@ class HttpApiClient implements ApiClient {
     switch (status) {
       case 'queued':
       case 'downloading':
+      case 'uploading':
       case 'completed':
       case 'error':
         return status;

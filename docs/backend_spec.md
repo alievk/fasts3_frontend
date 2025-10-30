@@ -74,7 +74,7 @@ Assume deployments under `https://<host>/api`. Paths below use this base.
 }
 ```
 
-- `status` must be one of `queued | downloading | completed | error`.
+- `status` must be one of `queued | downloading | uploading | completed | error`.
 - When a torrent with the same BTIH was previously uploaded, the response comes back immediately with `status: "completed"` and the cached `s3_bucket`/`s3_object_key` instead of queuing a duplicate download.
 - `manifest` is a location hint, not the manifest payload. When the worker stores the job locally it is the filesystem path (e.g. `/app/data/jobs/<btih>/manifest.json`). After an S3 upload it switches to the object key (e.g. `jobs/<btih>/manifest.json`). Fetch the actual manifest JSON via the presign endpoint.
 
@@ -142,7 +142,7 @@ Purpose: allow clients to cancel jobs and clean up storage.
 ## Behavioural Expectations
 - Backend should persist job history at least long enough for clients to reconnect and sync status.
 - When a download completes, upload all torrent files to S3, then expose the presign endpoint for clients that need a direct download link.
-- Downloads should transition through `queued -> downloading -> completed` (or `error`). Progress should increase monotonically when known.
+- Downloads should transition through `queued -> downloading -> uploading -> completed` (or `error`). Progress should increase monotonically when known.
 - Searching and job management should be idempotent; repeating identical requests should not create duplicates.
 
 ## Pagination & Bulk Sync (Future Work)
