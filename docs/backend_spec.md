@@ -127,17 +127,19 @@ Purpose: obtain an HTTPS presigned link for the first uploaded torrent file. Ret
 ### 6. Delete Job
 `DELETE /api/jobs/{btih}`
 
-Purpose: allow clients to cancel jobs and clean up storage.
+Purpose: cancel queued or running jobs and clean up storage.
 
-**Response 200:**
+**Response 202:**
 ```json
 {
   "deleted": true
 }
 ```
 
-- Return `204` if you prefer no body.
-- If job is already gone, respond with `404` so clients can remove it locally as well.
+- Cancelling is idempotent for the first call: queued jobs are removed from the worker queue immediately; active downloads are interrupted and Transmission is stopped before scratch data is removed.
+- After a successful cancellation, `GET /api/jobs/{btih}` responds with `404` once the delete marker is set.
+- Repeating `DELETE` on the same `btih` returns `404` to signal the job is already gone.
+- Return `404` when the job never existed.
 
 ## Behavioural Expectations
 - Backend should persist job history at least long enough for clients to reconnect and sync status.
