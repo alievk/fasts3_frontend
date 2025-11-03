@@ -134,7 +134,7 @@ Purpose: obtain an HTTPS presigned link for the first uploaded torrent file. Ret
 ```
 
 - `expires_at` is the UTC timestamp when the link becomes invalid.
-- `short_url` redirects via the configured redirect service.
+- `short_url` is a backend-managed helper link for clients that prefer shorter URLs.
 - Return `503` with error payload when presigning is disabled or fails.
 
 ### 6. Delete Job
