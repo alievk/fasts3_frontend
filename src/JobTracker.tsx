@@ -4,7 +4,7 @@ import { StoredJob } from './types.js';
 
 interface JobTrackerProps {
   jobs: StoredJob[];
-  onRemove: (btih: string) => void;
+  onRemove: (jobId: string) => void;
   disabled?: boolean;
 }
 
@@ -40,7 +40,7 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ jobs, onRemove, disabled
       } else if (input === 'd' || input === 'D') {
         const job = jobs[selectedIndex];
         if (job) {
-          onRemove(job.btih);
+          onRemove(job.jobId);
         }
       }
     },
@@ -63,9 +63,9 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ jobs, onRemove, disabled
         const status = job.lastKnownStatus;
         const progress = formatProgress(job.progress, status);
         const line = `${status.padEnd(11)} ${progress.padEnd(5)} ${job.label ?? job.btih}`;
-        const link = job.redirectUrl;
+        const link = job.shortUrl ?? job.s3Url;
         return (
-          <Text key={job.btih} color={isSelected ? 'green' : undefined}>
+          <Text key={job.jobId} color={isSelected ? 'green' : undefined}>
             {isSelected ? '➤ ' : '  '}
             {line}
             {link ? ` → ${link}` : ''}

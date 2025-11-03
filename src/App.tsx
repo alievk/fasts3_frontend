@@ -11,7 +11,7 @@ type Screen =
   | { key: 'menu' }
   | { key: 'search' }
   | { key: 'jobs' }
-  | { key: 'jobDetail'; btih: string };
+  | { key: 'jobDetail'; jobId: string };
 
 type NavigationState = {
   history: Screen[];
@@ -88,9 +88,9 @@ export const App: React.FC = () => {
     exit();
   };
 
-  const handleJobOpen = (btih: string) => {
-    void downloadService.syncJob(btih);
-    pushScreen({ key: 'jobDetail', btih });
+  const handleJobOpen = (jobId: string) => {
+    void downloadService.syncJob(jobId);
+    pushScreen({ key: 'jobDetail', jobId });
   };
 
   const handleSelect = async (result: SearchResult) => {
@@ -108,7 +108,7 @@ export const App: React.FC = () => {
         history: [
           { key: 'menu' },
           { key: 'jobs' },
-          { key: 'jobDetail', btih: job.btih }
+          { key: 'jobDetail', jobId: job.jobId }
         ],
         index: 2
       });
@@ -119,12 +119,12 @@ export const App: React.FC = () => {
     }
   };
 
-  const handleRemove = async (btih: string) => {
+  const handleRemove = async (jobId: string) => {
     setActionError(undefined);
     try {
-      await downloadService.remove(btih);
+      await downloadService.remove(jobId);
       clearError();
-      setInfoMessage(`Removed job ${btih}`);
+      setInfoMessage(`Removed job ${jobId}`);
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
       setActionError(err.message);
@@ -132,9 +132,9 @@ export const App: React.FC = () => {
     }
   };
 
-  const handleDeleteAndNavigate = async (btih: string) => {
+  const handleDeleteAndNavigate = async (jobId: string) => {
     try {
-      await handleRemove(btih);
+      await handleRemove(jobId);
       setNavigation({
         history: [
           { key: 'menu' },
@@ -148,7 +148,7 @@ export const App: React.FC = () => {
   };
 
   const currentJob =
-    currentScreen.key === 'jobDetail' ? jobs.find((job) => job.btih === currentScreen.btih) : undefined;
+    currentScreen.key === 'jobDetail' ? jobs.find((job) => job.jobId === currentScreen.jobId) : undefined;
 
   return (
     <Box flexDirection="column">
@@ -182,7 +182,7 @@ export const App: React.FC = () => {
             job={currentJob}
             focus
             onBack={goBack}
-            onDelete={currentJob ? (btih) => handleDeleteAndNavigate(btih) : undefined}
+            onDelete={currentJob ? (jobId) => handleDeleteAndNavigate(jobId) : undefined}
           />
         )}
       </Box>
@@ -252,7 +252,7 @@ const MainMenu: React.FC<MainMenuProps> = ({ focus, onNavigate, onExit }) => {
 interface JobsScreenProps {
   jobs: StoredJob[];
   focus: boolean;
-  onSelect: (btih: string) => void;
+  onSelect: (jobId: string) => void;
 }
 
 const JobsScreen: React.FC<JobsScreenProps> = ({ jobs, focus, onSelect }) => {
@@ -262,7 +262,7 @@ const JobsScreen: React.FC<JobsScreenProps> = ({ jobs, focus, onSelect }) => {
         label: `${job.label ?? job.btih} — ${job.lastKnownStatus}${
           job.progress !== null ? ` (${Math.round(job.progress * 100)}%)` : ''
         }`,
-        value: job.btih
+        value: job.jobId
       })),
     [jobs]
   );
@@ -293,7 +293,7 @@ interface JobDetailScreenProps {
   job: StoredJob | undefined;
   focus: boolean;
   onBack: () => void;
-  onDelete?: (btih: string) => Promise<void>;
+  onDelete?: (jobId: string) => Promise<void>;
 }
 
 const JobDetailScreen: React.FC<JobDetailScreenProps> = ({ job, focus, onBack, onDelete }) => {
@@ -318,7 +318,7 @@ const JobDetailScreen: React.FC<JobDetailScreenProps> = ({ job, focus, onBack, o
       if (input.toLowerCase() !== 'c') {
         return;
       }
-      const link = job.redirectUrl;
+      const link = job.shortUrl ?? job.s3Url;
       if (!link) {
         setCopyFeedback({ status: 'error', message: 'No download link available yet.' });
         return;
@@ -349,7 +349,8 @@ const JobDetailScreen: React.FC<JobDetailScreenProps> = ({ job, focus, onBack, o
     <Box flexDirection="column">
       <Text>{job.label ?? job.btih}</Text>
       <Text>Status: {job.lastKnownStatus}</Text>
-      <Text>ID: {job.btih}</Text>
+      <Text>Job ID: {job.jobId}</Text>
+      <Text>BTIH: {job.btih}</Text>
       <Text>
         Progress:{' '}
         {job.lastKnownStatus === 'completed'
@@ -364,7 +365,8 @@ const JobDetailScreen: React.FC<JobDetailScreenProps> = ({ job, focus, onBack, o
           ? `${(job.sizeBytes / (1024 * 1024 * 1024)).toFixed(2)} GiB`
           : 'Unknown'}
       </Text>
-      <Text>Download: {job.redirectUrl ?? '—'}</Text>
+      <Text>Download: {job.shortUrl ?? job.s3Url ?? '—'}</Text>
+      <Text>Link expires: {job.s3UrlExpiresAt ?? '—'}</Text>
       {copyFeedback && (
         <Text color={copyFeedback.status === 'success' ? 'green' : 'red'}>
           {copyFeedback.message}
@@ -390,7 +392,7 @@ const JobDetailScreen: React.FC<JobDetailScreenProps> = ({ job, focus, onBack, o
             setIsDeleting(true);
             void (async () => {
               try {
-                await onDelete(job.btih);
+                await onDelete(job.jobId);
               } finally {
                 setIsDeleting(false);
               }
@@ -401,7 +403,7 @@ const JobDetailScreen: React.FC<JobDetailScreenProps> = ({ job, focus, onBack, o
         }}
       />
       {isDeleting && <Text color="gray">Deleting…</Text>}
-      {job.redirectUrl && <Text color="gray">Press C to copy the download link.</Text>}
+      {(job.shortUrl ?? job.s3Url) && <Text color="gray">Press C to copy the download link.</Text>}
       <Text color="gray">Use ↑/↓ to choose, Enter to confirm.</Text>
       <Text color="gray">Use ← to go back to jobs.</Text>
     </Box>

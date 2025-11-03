@@ -13,12 +13,18 @@ interface ServerSearchResult {
 }
 
 interface ServerCreateJobResponse {
+  job_id: string;
   btih: string;
   status: string;
-  created_at: string;
+  status_updated_at: string;
+  progress: number | null;
+  manifest: string | null;
+  error: string | null;
   s3_bucket: string | null;
   s3_object_key: string | null;
-  manifest: string | null;
+  s3_url: string | null;
+  s3_url_expires_at: string | null;
+  short_url?: string | null;
 }
 
 interface ServerHealthResponse {
@@ -27,24 +33,30 @@ interface ServerHealthResponse {
 }
 
 interface ServerJobDetail {
+  job_id: string;
   btih: string;
   status: string;
   progress: number | null;
   size_bytes?: number | null;
-  updated_at: string;
+  status_updated_at: string;
   label?: string | null;
   s3_bucket?: string | null;
   s3_object_key?: string | null;
   manifest?: string | null;
   error?: string | null;
+  s3_url?: string | null;
+  s3_url_expires_at?: string | null;
+  short_url?: string | null;
 }
 
 interface ServerPresignResponse {
+  job_id: string;
   btih: string;
   bucket: string;
   key: string;
   s3_url: string;
-  expires_in: number;
+  expires_at: string;
+  short_url?: string | null;
 }
 
 class HttpApiClient implements ApiClient {
@@ -84,38 +96,53 @@ class HttpApiClient implements ApiClient {
     });
 
     return {
+      jobId: payload.job_id,
       btih: payload.btih,
       status: this.normalizeStatus(payload.status),
-      createdAt: payload.created_at,
-      s3Bucket: payload.s3_bucket,
-      s3ObjectKey: payload.s3_object_key,
-      manifest: payload.manifest
+      createdAt: payload.status_updated_at ?? new Date().toISOString(),
+      statusUpdatedAt: payload.status_updated_at,
+      progress: payload.progress ?? null,
+      manifest: payload.manifest ?? null,
+      error: payload.error ?? null,
+      s3Bucket: payload.s3_bucket ?? null,
+      s3ObjectKey: payload.s3_object_key ?? null,
+      s3Url: payload.s3_url ?? null,
+      s3UrlExpiresAt: payload.s3_url_expires_at ?? null,
+      shortUrl: payload.short_url ?? null
     };
   }
 
-  async getJob(btih: string): Promise<JobDetail | undefined> {
-    const result = await this.fetchJson<ServerJobDetail>(`/jobs/${encodeURIComponent(btih)}`, {}, { allowNotFound: true });
+  async getJob(jobId: string): Promise<JobDetail | undefined> {
+    const result = await this.fetchJson<ServerJobDetail>(
+      `/jobs/${encodeURIComponent(jobId)}`,
+      {},
+      { allowNotFound: true }
+    );
 
     if (!result) {
       return undefined;
     }
 
     return {
+      jobId: result.job_id,
       btih: result.btih,
       status: this.normalizeStatus(result.status),
       progress: result.progress ?? null,
       sizeBytes: result.size_bytes ?? null,
-      updatedAt: result.updated_at,
+      statusUpdatedAt: result.status_updated_at,
       label: result.label ?? null,
       s3Bucket: result.s3_bucket ?? null,
       s3ObjectKey: result.s3_object_key ?? null,
       manifest: result.manifest ?? null,
-      error: result.error ?? null
+      error: result.error ?? null,
+      s3Url: result.s3_url ?? null,
+      s3UrlExpiresAt: result.s3_url_expires_at ?? null,
+      shortUrl: result.short_url ?? null
     };
   }
 
-  async deleteJob(btih: string): Promise<void> {
-    await this.fetchJson(`/jobs/${encodeURIComponent(btih)}`, { method: 'DELETE' }, { expectNoContent: true });
+  async deleteJob(jobId: string): Promise<void> {
+    await this.fetchJson(`/jobs/${encodeURIComponent(jobId)}`, { method: 'DELETE' }, { expectNoContent: true });
   }
 
   async health(): Promise<HealthResponse> {
@@ -126,9 +153,9 @@ class HttpApiClient implements ApiClient {
     };
   }
 
-  async getJobPresignedLink(btih: string): Promise<JobPresignResponse | undefined> {
+  async getJobPresignedLink(jobId: string): Promise<JobPresignResponse | undefined> {
     const payload = await this.fetchJson<ServerPresignResponse>(
-      `/jobs/${encodeURIComponent(btih)}/presign_link`,
+      `/jobs/${encodeURIComponent(jobId)}/presign_link`,
       {},
       { allowNotFound: true }
     );
@@ -136,11 +163,13 @@ class HttpApiClient implements ApiClient {
       return undefined;
     }
     return {
+      jobId: payload.job_id,
       btih: payload.btih,
       bucket: payload.bucket,
       key: payload.key,
       s3Url: payload.s3_url,
-      expiresIn: payload.expires_in
+      expiresAt: payload.expires_at,
+      shortUrl: payload.short_url ?? null
     };
   }
 

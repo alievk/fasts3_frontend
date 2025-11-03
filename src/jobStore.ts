@@ -37,10 +37,14 @@ const normalizeJobStoreData = (input: unknown): JobStoreData => {
     }
 
     const entity = rawJob as Record<string, unknown>;
-    const rawBtih = entity.btih;
-    const btih =
-      (typeof rawBtih === 'string' && rawBtih.trim()) || (typeof key === 'string' && key.trim()) || null;
+    const rawJobId = entity.jobId ?? entity.job_id ?? key;
+    const jobId = typeof rawJobId === 'string' && rawJobId.trim() ? rawJobId.trim() : null;
+    if (!jobId) {
+      continue;
+    }
 
+    const rawBtih = entity.btih;
+    const btih = typeof rawBtih === 'string' && rawBtih.trim() ? rawBtih.trim() : null;
     if (!btih) {
       continue;
     }
@@ -49,35 +53,36 @@ const normalizeJobStoreData = (input: unknown): JobStoreData => {
     const createdAt = typeof entity.createdAt === 'string' ? entity.createdAt : new Date().toISOString();
     const lastKnownStatus = isJobStatus(entity.lastKnownStatus) ? (entity.lastKnownStatus as JobStatus) : 'queued';
     const lastSyncedAt = typeof entity.lastSyncedAt === 'string' ? entity.lastSyncedAt : createdAt;
+    const statusUpdatedAt =
+      typeof entity.statusUpdatedAt === 'string' ? (entity.statusUpdatedAt as string) : null;
     const progress =
       typeof entity.progress === 'number' && Number.isFinite(entity.progress) ? (entity.progress as number) : null;
     const s3Bucket = typeof entity.s3Bucket === 'string' ? (entity.s3Bucket as string) : null;
     const s3ObjectKey = typeof entity.s3ObjectKey === 'string' ? (entity.s3ObjectKey as string) : null;
     const manifest = typeof entity.manifest === 'string' ? (entity.manifest as string) : null;
     const s3Url = typeof entity.s3Url === 'string' ? (entity.s3Url as string) : null;
-    const presignExpiresAt =
-      typeof entity.presignExpiresAt === 'string' ? (entity.presignExpiresAt as string) : null;
-    const redirectUrl = typeof entity.redirectUrl === 'string' ? (entity.redirectUrl as string) : null;
-    const redirectExpiresAt =
-      typeof entity.redirectExpiresAt === 'string' ? (entity.redirectExpiresAt as string) : null;
+    const s3UrlExpiresAt =
+      typeof entity.s3UrlExpiresAt === 'string' ? (entity.s3UrlExpiresAt as string) : null;
+    const shortUrl = typeof entity.shortUrl === 'string' ? (entity.shortUrl as string) : null;
     const error = typeof entity.error === 'string' ? (entity.error as string) : null;
     const sizeBytes =
       typeof entity.sizeBytes === 'number' && Number.isFinite(entity.sizeBytes) ? (entity.sizeBytes as number) : null;
 
-    jobs[btih] = {
+    jobs[jobId] = {
+      jobId,
       btih,
       label,
       createdAt,
       lastKnownStatus,
       lastSyncedAt,
+      statusUpdatedAt,
       progress,
       s3Bucket,
       s3ObjectKey,
       manifest,
       s3Url,
-      presignExpiresAt,
-      redirectUrl,
-      redirectExpiresAt,
+      s3UrlExpiresAt,
+      shortUrl,
       error,
       sizeBytes
     };
@@ -117,13 +122,13 @@ export class JobStore {
 
   async upsert(job: StoredJob): Promise<void> {
     const data = await this.load();
-    data.jobs[job.btih] = job;
+    data.jobs[job.jobId] = job;
     await this.save(data);
   }
 
-  async remove(btih: string): Promise<void> {
+  async remove(jobId: string): Promise<void> {
     const data = await this.load();
-    delete data.jobs[btih];
+    delete data.jobs[jobId];
     await this.save(data);
   }
 }

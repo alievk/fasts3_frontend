@@ -1,7 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
 
-const REDIRECT_BASE_URL = 'http://ec2-16-170-209-29.eu-north-1.compute.amazonaws.com:8787';
-
 if (typeof window !== 'undefined') {
   console.log('[Player] bundle loaded');
 }
@@ -37,10 +35,16 @@ export const PlayerApp: React.FC = () => {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const btihParam = params.get('btih')?.trim() ?? '';
+    const jobIdParam = params.get('job_id')?.trim() ?? params.get('jobId')?.trim() ?? '';
     const rawUrl = params.get('videoUrl')?.trim() ?? '';
+    const apiBaseParam = params.get('apiBase')?.trim() ?? params.get('api_base')?.trim() ?? '';
+    const tokenParam = params.get('token')?.trim() ?? '';
 
-    console.log('[Player] query params', { btih: btihParam || null, videoUrl: rawUrl || null });
+    console.log('[Player] query params', {
+      jobId: jobIdParam || null,
+      videoUrl: rawUrl || null,
+      apiBase: apiBaseParam || null
+    });
 
     const resolveVideoUrl = (value: string): string => {
       const trimmed = value.trim();
@@ -62,68 +66,137 @@ export const PlayerApp: React.FC = () => {
       }
     };
 
-    const resolvePresignedUrl = async (btih: string): Promise<string> => {
-      const baseUrl = REDIRECT_BASE_URL;
-      let endpoint: URL;
+    const resolveApiBase = (): string => {
+      const trimmed = apiBaseParam || '';
+      if (trimmed) {
+        try {
+          const normalized = new URL(trimmed);
+          return normalized.toString().replace(/\/$/, '');
+        } catch (error) {
+          throw new Error(
+            `Invalid apiBase parameter: ${error instanceof Error ? error.message : String(error)}`
+          );
+        }
+      }
 
       try {
-        endpoint = new URL(`/presigned/${encodeURIComponent(btih)}/info`, baseUrl);
+        const fallback = new URL('/api', window.location.origin);
+        return fallback.toString().replace(/\/$/, '');
       } catch (error) {
-        console.error('[Player] failed to compose presigned endpoint', error);
         throw new Error(
-          `Invalid redirect base URL: ${error instanceof Error ? error.message : String(error)}`
+          `Failed to determine API base URL: ${error instanceof Error ? error.message : String(error)}`
         );
-      }
-
-      console.log('[Player] fetching presigned info', endpoint.toString());
-
-      let response: Response;
-      try {
-        response = await fetch(endpoint.toString());
-      } catch (error) {
-        console.error('[Player] network error while fetching presigned info', error);
-        throw new Error(`Network error while fetching presigned link: ${error instanceof Error ? error.message : String(error)}`);
-      }
-
-      if (!response.ok) {
-        console.error('[Player] presigned lookup failed', response.status, response.statusText);
-        throw new Error(`Presigned link lookup failed with status ${response.status}`);
-      }
-
-      let payload: unknown;
-      try {
-        payload = await response.json();
-      } catch (error) {
-        throw new Error(`Failed to parse presigned response: ${error instanceof Error ? error.message : String(error)}`);
-      }
-
-      const urlFromResponse =
-        payload && typeof (payload as { url?: unknown }).url === 'string'
-          ? (payload as { url: string }).url
-          : undefined;
-
-      if (!urlFromResponse) {
-        console.error('[Player] presigned payload missing url', payload);
-        throw new Error('Presigned response is missing url field.');
-      }
-
-      try {
-        const normalized = new URL(urlFromResponse);
-        if (!['http:', 'https:'].includes(normalized.protocol)) {
-          console.error('[Player] invalid protocol in presigned url', normalized.toString());
-          throw new Error('Presigned url must be an HTTP or HTTPS link.');
-        }
-        console.log('[Player] presigned url resolved', normalized.toString());
-        return normalized.toString();
-      } catch (error) {
-        if (error instanceof Error && error.message === 'Presigned url must be an HTTP or HTTPS link.') {
-          throw error;
-        }
-        throw new Error(`Invalid presigned url: ${error instanceof Error ? error.message : String(error)}`);
       }
     };
 
     const asMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
+    const fetchJson = async (endpoint: URL): Promise<unknown> => {
+      console.log('[Player] fetching', endpoint.toString());
+      const headers: Record<string, string> = {};
+      if (tokenParam) {
+        headers.Authorization = `Bearer ${tokenParam}`;
+      }
+
+      let response: Response;
+      try {
+        response = await fetch(endpoint.toString(), { headers });
+      } catch (error) {
+        console.error('[Player] network error while fetching', endpoint.toString(), error);
+        throw new Error(
+          `Network error while fetching ${endpoint.pathname}: ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
+
+      if (response.status === 404) {
+        throw new Error('Job not found.');
+      }
+
+      if (!response.ok) {
+        const body = await response.text().catch(() => '');
+        throw new Error(
+          `Request failed with status ${response.status}${body ? ` — ${body}` : ''}`
+        );
+      }
+
+      if (response.status === 204) {
+        return undefined;
+      }
+
+      try {
+        return await response.json();
+      } catch (error) {
+        throw new Error(
+          `Failed to parse response from ${endpoint.pathname}: ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
+    };
+
+    const extractUrl = (value: unknown): string | null => {
+      if (!value || typeof value !== 'string') {
+        return null;
+      }
+      try {
+        const normalized = new URL(value);
+        if (!['http:', 'https:'].includes(normalized.protocol)) {
+          return null;
+        }
+        return normalized.toString();
+      } catch {
+        return null;
+      }
+    };
+
+    const isExpired = (value: string | null): boolean => {
+      if (!value) {
+        return true;
+      }
+      const expires = Date.parse(value);
+      return Number.isNaN(expires) || expires <= Date.now();
+    };
+
+    const fetchJobDownloadUrl = async (jobId: string, apiBase: string): Promise<string> => {
+      const normalizedBase = apiBase.replace(/\/$/, '');
+      const detailEndpoint = new URL(`/jobs/${encodeURIComponent(jobId)}`, `${normalizedBase}/`);
+      const payload = (await fetchJson(detailEndpoint)) as Record<string, unknown> | undefined;
+
+      if (!payload || typeof payload !== 'object') {
+        throw new Error('Job details unavailable.');
+      }
+
+      const status = typeof payload.status === 'string' ? payload.status : 'unknown';
+      if (status === 'error') {
+        const message =
+          typeof payload.error === 'string' && payload.error.trim().length > 0
+            ? payload.error
+            : 'Job failed.';
+        throw new Error(message);
+      }
+
+      if (status !== 'completed') {
+        throw new Error(`Job ${jobId} is ${status}. Try again later.`);
+      }
+
+      let downloadUrl = extractUrl(payload.s3_url ?? null);
+      let expiresAt = typeof payload.s3_url_expires_at === 'string' ? payload.s3_url_expires_at : null;
+
+      if (!downloadUrl || isExpired(expiresAt)) {
+        const presignEndpoint = new URL(`/jobs/${encodeURIComponent(jobId)}/presign_link`, `${normalizedBase}/`);
+        const presign = (await fetchJson(presignEndpoint)) as Record<string, unknown> | undefined;
+        downloadUrl = extractUrl(presign?.s3_url ?? null);
+        expiresAt = typeof presign?.expires_at === 'string' ? presign.expires_at : null;
+      }
+
+      if (!downloadUrl) {
+        throw new Error('Backend did not provide a downloadable URL.');
+      }
+
+      if (expiresAt) {
+        console.log('[Player] download link expires at', expiresAt);
+      }
+
+      return downloadUrl;
+    };
 
     let cancelled = false;
 
@@ -148,14 +221,15 @@ export const PlayerApp: React.FC = () => {
     };
 
     const run = async (): Promise<void> => {
-      if (btihParam) {
+      if (jobIdParam) {
         try {
-          const resolved = await resolvePresignedUrl(btihParam);
+          const apiBase = resolveApiBase();
+          const resolved = await fetchJobDownloadUrl(jobIdParam, apiBase);
           setReady(resolved);
           return;
         } catch (error) {
           if (rawUrl.length > 0) {
-            console.warn('[Player] btih lookup failed, attempting fallback videoUrl', error);
+            console.warn('[Player] job lookup failed, attempting fallback videoUrl', error);
             try {
               const fallback = resolveVideoUrl(rawUrl);
               setReady(fallback);
@@ -163,14 +237,14 @@ export const PlayerApp: React.FC = () => {
             } catch (fallbackError) {
               console.error('[Player] fallback videoUrl failed', fallbackError);
               setError(
-                `Unable to resolve btih ${btihParam}: ${asMessage(error)}. Fallback videoUrl failed: ${asMessage(fallbackError)}`
+                `Unable to resolve job ${jobIdParam}: ${asMessage(error)}. Fallback videoUrl failed: ${asMessage(fallbackError)}`
               );
               return;
             }
           }
 
-          console.error('[Player] btih resolution failed without fallback', error);
-          setError(`Unable to resolve btih ${btihParam}: ${asMessage(error)}`);
+          console.error('[Player] job resolution failed without fallback', error);
+          setError(`Unable to resolve job ${jobIdParam}: ${asMessage(error)}`);
           return;
         }
       }
@@ -186,7 +260,7 @@ export const PlayerApp: React.FC = () => {
         return;
       }
 
-      setError('Missing required btih or videoUrl parameter.');
+      setError('Missing required job_id or videoUrl parameter.');
     };
 
     void run();

@@ -22,8 +22,8 @@ export const ServiceProvider: React.FC<React.PropsWithChildren> = ({ children })
   const downloadService = useMemo(() => {
     const apiClient = createApiClient();
     const jobStore = new JobStore(config.statePath);
-    return new DownloadService(apiClient, jobStore, config.searchLimit, searchPipeline, config.redirectServerBaseUrl);
-  }, [config.statePath, config.searchLimit, searchPipeline, config.redirectServerBaseUrl]);
+    return new DownloadService(apiClient, jobStore, config.searchLimit, searchPipeline);
+  }, [config.statePath, config.searchLimit, searchPipeline]);
   const poller = useMemo(() => new Poller(downloadService, config.pollingIntervalMs), [downloadService, config.pollingIntervalMs]);
 
   return <ServiceContext.Provider value={{ config, downloadService, poller }}>{children}</ServiceContext.Provider>;

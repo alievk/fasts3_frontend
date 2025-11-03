@@ -1,63 +1,37 @@
 #!/usr/bin/env node
 import process from 'node:process';
-import { loadConfig } from './config.js';
+import { createApiClient } from './apiClient.js';
 
 const usage = () => {
-  console.error('Usage: tsx src/registerPresignedLink.ts <btih> <url> <expiresInSeconds|ISO8601>');
+  console.error('Usage: tsx src/registerPresignedLink.ts <job_id>');
   process.exit(1);
 };
 
-const [, , btih, url, expiresInput] = process.argv;
+const [, , jobId] = process.argv;
 
-if (!btih || !url || !expiresInput) {
+if (!jobId) {
   usage();
 }
 
-const parseExpiresAt = (input: string): Date => {
-  const numeric = Number.parseFloat(input);
-  if (Number.isFinite(numeric) && numeric > 0) {
-    return new Date(Date.now() + numeric * 1000);
-  }
-
-  const parsed = new Date(input);
-  if (Number.isNaN(parsed.getTime())) {
-    console.error(`Invalid expires input "${input}". Provide seconds (number) or ISO timestamp.`);
-    process.exit(1);
-  }
-  return parsed;
-};
-
-const expiresAt = parseExpiresAt(expiresInput);
-const config = loadConfig();
-
 const main = async () => {
-  const endpoint = new URL('/admin/presigned', config.redirectServerBaseUrl);
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      btih,
-      url,
-      expiresAt: expiresAt.toISOString()
-    })
-  });
+  const apiClient = createApiClient();
+  const link = await apiClient.getJobPresignedLink(jobId);
 
-  if (!response.ok) {
-    const body = await response.text().catch(() => '');
-    console.error(
-      `Failed to register ${btih}: ${response.status} ${response.statusText}${body ? ` — ${body}` : ''}`
-    );
+  if (!link) {
+    console.error(`No presigned link available yet for job ${jobId}.`);
     process.exit(1);
   }
 
-  console.log(
-    `Registered ${btih} with expiry ${expiresAt.toISOString()} (${Math.round(
-      (expiresAt.getTime() - Date.now()) / 1000
-    )}s remaining)`
-  );
+  console.log(`Job ID: ${link.jobId}`);
+  console.log(`BTIH: ${link.btih}`);
+  console.log(`Bucket: ${link.bucket}`);
+  console.log(`Key: ${link.key}`);
+  console.log(`Short URL: ${link.shortUrl ?? '—'}`);
+  console.log(`S3 URL: ${link.s3Url}`);
+  console.log(`Expires at: ${link.expiresAt}`);
 };
 
 main().catch((error) => {
-  console.error(error);
+  console.error(error instanceof Error ? error.message : String(error));
   process.exit(1);
 });

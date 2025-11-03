@@ -14,16 +14,20 @@ export type SearchResultStage = (results: SearchResult[]) => SearchResult[] | Pr
 export type SearchResultPipeline = SearchResultStage[];
 
 export interface JobDetail {
+  jobId: string;
   btih: string;
   status: JobStatus;
   progress: number | null;
   sizeBytes?: number | null;
-  updatedAt: string;
+  statusUpdatedAt: string;
   label?: string | null;
   s3Bucket?: string | null;
   s3ObjectKey?: string | null;
   manifest?: string | null;
   error?: string | null;
+  s3Url?: string | null;
+  s3UrlExpiresAt?: string | null;
+  shortUrl?: string | null;
 }
 
 export interface HealthResponse {
@@ -32,29 +36,32 @@ export interface HealthResponse {
 }
 
 export interface StoredJob {
+  jobId: string;
   btih: string;
   label?: string | null;
   createdAt: string;
   lastKnownStatus: JobStatus;
   lastSyncedAt: string;
+  statusUpdatedAt?: string | null;
   progress: number | null;
   s3Bucket?: string | null;
   s3ObjectKey?: string | null;
   manifest?: string | null;
   s3Url?: string | null;
-  presignExpiresAt?: string | null;
-  redirectUrl?: string | null;
-  redirectExpiresAt?: string | null;
+  s3UrlExpiresAt?: string | null;
+  shortUrl?: string | null;
   error?: string | null;
   sizeBytes?: number | null;
 }
 
 export interface JobPresignResponse {
+  jobId: string;
   btih: string;
   bucket: string;
   key: string;
   s3Url: string;
-  expiresIn: number;
+  expiresAt: string;
+  shortUrl: string | null;
 }
 
 export interface JobStoreData {
@@ -62,12 +69,19 @@ export interface JobStoreData {
 }
 
 export interface CreateJobResponse {
+  jobId: string;
   btih: string;
   status: JobStatus;
   createdAt: string;
+  statusUpdatedAt: string;
+  progress: number | null;
   s3Bucket: string | null;
   s3ObjectKey: string | null;
   manifest: string | null;
+  error: string | null;
+  s3Url: string | null;
+  s3UrlExpiresAt: string | null;
+  shortUrl: string | null;
 }
 
 export interface Config {
@@ -89,8 +103,8 @@ export interface Config {
 export interface ApiClient {
   search(query: string, limit?: number): Promise<SearchResult[]>;
   createJob(magnet: string, label?: string): Promise<CreateJobResponse>;
-  getJob(btih: string): Promise<JobDetail | undefined>;
-  deleteJob(btih: string): Promise<void>;
+  getJob(jobId: string): Promise<JobDetail | undefined>;
+  deleteJob(jobId: string): Promise<void>;
   health(): Promise<HealthResponse>;
-  getJobPresignedLink(btih: string): Promise<JobPresignResponse | undefined>;
+  getJobPresignedLink(jobId: string): Promise<JobPresignResponse | undefined>;
 }

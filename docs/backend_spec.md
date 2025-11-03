@@ -65,33 +65,42 @@ Assume deployments under `https://<host>/api`. Paths below use this base.
 **Response 202:**
 ```json
 {
+  "job_id": "b47ab4d3f3a841c9a0e4c6ccf0a2f89f",
   "btih": "1f6bf62b2f6c4a72b7c84df5971e2b5b7c84df5",
   "status": "queued",
+  "status_updated_at": "2025-10-13T15:12:31.123Z",
+  "progress": null,
+  "manifest": null,
+  "error": null,
   "s3_bucket": null,
   "s3_object_key": null,
-  "manifest": null,
-  "created_at": "2025-10-13T15:12:31.123Z"
+  "s3_url": null,
+  "s3_url_expires_at": null
 }
 ```
 
 - `status` must be one of `queued | downloading | uploading | completed | error`.
 - When a torrent with the same BTIH was previously uploaded, the response comes back immediately with `status: "completed"` and the cached `s3_bucket`/`s3_object_key` instead of queuing a duplicate download.
 - `manifest` is a location hint, not the manifest payload. When the worker stores the job locally it is the filesystem path (e.g. `/app/data/jobs/<btih>/manifest.json`). After an S3 upload it switches to the object key (e.g. `jobs/<btih>/manifest.json`). Fetch the actual manifest JSON via the presign endpoint.
+- Each POST generates a new `job_id` (UUIDv4). Multiple job IDs can point at the same BTIH when several clients request the same torrent.
 
 ### 4. Get Job Status
-`GET /api/jobs/{btih}`
+`GET /api/jobs/{job_id}`
 
 **Response 200:**
 ```json
 {
+  "job_id": "b47ab4d3f3a841c9a0e4c6ccf0a2f89f",
   "btih": "1f6bf62b2f6c4a72b7c84df5971e2b5b7c84df5",
   "status": "downloading",
   "progress": 0.42,
+  "status_updated_at": "2025-10-13T15:24:01.591Z",
+  "manifest": null,
+  "error": null,
   "s3_bucket": null,
   "s3_object_key": null,
-  "manifest": null,
-  "updated_at": "2025-10-13T15:24:01.591Z",
-  "error": null
+  "s3_url": null,
+  "s3_url_expires_at": null
 }
 ```
 
@@ -99,33 +108,37 @@ Field notes:
 - `progress` in `[0,1]`, may be `null` if unknown.
 - `s3_bucket`, `s3_object_key`, and `manifest` populate once the upload finishes (cached BTIHs return them immediately).
 - The presign endpoint still returns the actual manifest/content; treat `manifest` here as a pointer only.
-- No download link is returned; clients must call `/api/jobs/{btih}/presign_link` to fetch a presigned URL once the job is completed.
+- No download link is returned; clients must call `/api/jobs/{job_id}/presign_link` to fetch a presigned URL once the job is completed.
 - `error` string recommended when `status == "error"`.
+- `status_updated_at` reflects the last transition time persisted in Redis.
 
 Error cases:
-- `404` when `btih` is unknown or has been deleted (CLI will treat as orphan and remove locally).
+- `404` when `job_id` is unknown or has been deleted (CLI will treat as orphan and remove locally).
 
 ### 5. Get Job Presigned Link
-`GET /api/jobs/{btih}/presign_link`
+`GET /api/jobs/{job_id}/presign_link`
 
 Purpose: obtain an HTTPS presigned link for the first uploaded torrent file. Returns `404` if the job is unfinished or stored locally.
 
 **Response 200:**
 ```json
 {
+  "job_id": "b47ab4d3f3a841c9a0e4c6ccf0a2f89f",
   "btih": "1f6bf62b2f6c4a72b7c84df5971e2b5b7c84df5",
   "bucket": "torrent-downloads",
   "key": "jobs/1f6bf62b2f6c4a72b7c84df5971e2b5b7c84df5/files/000_readme.txt",
   "s3_url": "https://s3.amazonaws.com/torrent-downloads/jobs/...",
-  "expires_in": 900
+  "expires_at": "2025-10-13T15:24:01.591Z",
+  "short_url": "http://torrent.example/redirect?job_id=b47ab4d3f3a841c9a0e4c6ccf0a2f89f"
 }
 ```
 
-- `expires_in` matches the server-side presign window (seconds).
+- `expires_at` is the UTC timestamp when the link becomes invalid.
+- `short_url` redirects via the configured redirect service.
 - Return `503` with error payload when presigning is disabled or fails.
 
 ### 6. Delete Job
-`DELETE /api/jobs/{btih}`
+`DELETE /api/jobs/{job_id}`
 
 Purpose: cancel queued or running jobs and clean up storage.
 
@@ -137,8 +150,9 @@ Purpose: cancel queued or running jobs and clean up storage.
 ```
 
 - Cancelling is idempotent for the first call: queued jobs are removed from the worker queue immediately; active downloads are interrupted and Transmission is stopped before scratch data is removed.
-- After a successful cancellation, `GET /api/jobs/{btih}` responds with `404` once the delete marker is set.
-- Repeating `DELETE` on the same `btih` returns `404` to signal the job is already gone.
+- After a successful cancellation, `GET /api/jobs/{job_id}` responds with `404` once the delete marker is set.
+- Repeating `DELETE` on the same `job_id` returns `404` to signal the job is already gone.
+- Cancelling any job ID invalidates the shared BTIH download for all clients and removes the ID from the jobs cache.
 - Return `404` when the job never existed.
 
 ## Behavioural Expectations

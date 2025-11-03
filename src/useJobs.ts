@@ -10,7 +10,7 @@ interface JobsHookState {
 }
 
 const updateJobList = (jobs: StoredJob[], updated: StoredJob): StoredJob[] => {
-  const next = jobs.filter((job) => job.btih !== updated.btih);
+  const next = jobs.filter((job) => job.jobId !== updated.jobId);
   return [updated, ...next].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 };
 
@@ -28,8 +28,8 @@ export const useJobs = (): JobsHookState => {
     const handleUpdate = (job: StoredJob) => {
       setJobs((current) => updateJobList(current, job));
     };
-    const handleRemove = (btih: string) => {
-      setJobs((current) => current.filter((job) => job.btih !== btih));
+    const handleRemove = (jobId: string) => {
+      setJobs((current) => current.filter((job) => job.jobId !== jobId));
     };
     const handleError = (error: Error) => {
       setLastError(error.message);

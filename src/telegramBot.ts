@@ -19,13 +19,7 @@ const config = loadConfig();
 const apiClient = createApiClient();
 const jobStore = new JobStore(config.statePath);
 const searchPipeline = createSearchPipeline(config);
-const downloadService = new DownloadService(
-  apiClient,
-  jobStore,
-  config.searchLimit,
-  searchPipeline,
-  config.redirectServerBaseUrl
-);
+const downloadService = new DownloadService(apiClient, jobStore, config.searchLimit, searchPipeline);
 const poller = new Poller(downloadService, config.pollingIntervalMs);
 const bot = new Telegraf(botToken);
 
@@ -154,10 +148,13 @@ const formatDateTime = (primary: string | Date | null | undefined, fallback?: Da
 };
 
 const formatJobDetail = (job: StoredJob): string => {
-  const lastUpdated = formatDateTime(job.lastSyncedAt ?? null);
-  const downloadLink = job.redirectUrl;
+  const statusUpdated = formatDateTime(job.statusUpdatedAt ?? job.lastSyncedAt ?? null);
+  const lastSynced = formatDateTime(job.lastSyncedAt ?? null);
+  const downloadLink = job.shortUrl ?? job.s3Url ?? null;
+  const expiresAt = job.s3UrlExpiresAt ? formatDateTime(job.s3UrlExpiresAt) : undefined;
   const lines = [
     `Title: ${job.label ?? job.btih}`,
+    `Job ID: ${job.jobId}`,
     `BTIH: ${job.btih}`,
     `Status: ${job.lastKnownStatus}`,
     `Progress: ${
@@ -169,8 +166,10 @@ const formatJobDetail = (job: StoredJob): string => {
     }`,
     `Size: ${formatSize(job.sizeBytes ?? null)}`,
     downloadLink ? `Download: ${downloadLink}` : undefined,
+    expiresAt ? `Link expires: ${expiresAt}` : undefined,
     job.error ? `Error: ${job.error}` : undefined,
-    `Last update: ${lastUpdated}`
+    `Last status change: ${statusUpdated}`,
+    `Last sync: ${lastSynced}`
   ];
   return lines.filter(Boolean).join('\n');
 };
@@ -215,8 +214,8 @@ const buildSearchPage = (results: SearchResult[], requestedPage: number) => {
 };
 
 const buildJobActionsKeyboard = (job: StoredJob) => {
-  const encodedId = encodeURIComponent(job.btih);
-  const downloadLink = job.redirectUrl;
+  const encodedId = encodeURIComponent(job.jobId);
+  const downloadLink = job.shortUrl ?? job.s3Url ?? null;
   const buttons = [
     downloadLink ? Markup.button.url('Open link', downloadLink) : undefined,
     Markup.button.callback('Refresh', `refresh:${encodedId}`),
@@ -229,7 +228,7 @@ const buildJobsKeyboard = (jobs: StoredJob[]) => {
   const buttons = jobs.map((job) =>
     Markup.button.callback(
       `${normalizeTitle(job.label ?? job.btih)} — ${job.lastKnownStatus}`,
-      `job:${encodeURIComponent(job.btih)}`
+      `job:${encodeURIComponent(job.jobId)}`
     )
   );
   return Markup.inlineKeyboard(buttons, { columns: 1 });
@@ -316,7 +315,7 @@ bot.action(/^start:(\d+)$/, async (ctx) => {
     const job = await downloadService.startDownload(result);
     await safeAnswerCallback(ctx, 'Download started.');
     await ctx.editMessageReplyMarkup(undefined);
-    await ctx.reply(`Started ${result.title}\nBTIH: ${job.btih}`);
+    await ctx.reply(`Started ${result.title}\nJob ID: ${job.jobId}\nBTIH: ${job.btih}`);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     await safeAnswerCallback(ctx, 'Failed to start download', { show_alert: true });
@@ -347,15 +346,15 @@ bot.action(/^page:(\d+)$/, async (ctx) => {
 bot.action(/^job:(.+)$/, async (ctx) => {
   const match = ctx.match as RegExpExecArray | undefined;
   const rawId = match?.[1];
-  const btih = rawId ? decodeURIComponent(rawId) : undefined;
-  if (!btih) {
+  const jobId = rawId ? decodeURIComponent(rawId) : undefined;
+  if (!jobId) {
     await safeAnswerCallback(ctx);
     return;
   }
   await safeAnswerCallback(ctx);
-  const job = trackedJobs.get(btih) ?? downloadService.getJobs().find((item) => item.btih === btih);
+  const job = trackedJobs.get(jobId) ?? downloadService.getJobs().find((item) => item.jobId === jobId);
   if (!job) {
-    await ctx.reply(`Job ${btih} not found.`);
+    await ctx.reply(`Job ${jobId} not found.`);
     return;
   }
   await ctx.reply(formatJobDetail(job), buildJobActionsKeyboard(job));
@@ -364,16 +363,16 @@ bot.action(/^job:(.+)$/, async (ctx) => {
 bot.action(/^refresh:(.+)$/, async (ctx) => {
   const match = ctx.match as RegExpExecArray | undefined;
   const rawId = match?.[1];
-  const btih = rawId ? decodeURIComponent(rawId) : undefined;
-  if (!btih) {
+  const jobId = rawId ? decodeURIComponent(rawId) : undefined;
+  if (!jobId) {
     await safeAnswerCallback(ctx);
     return;
   }
   await safeAnswerCallback(ctx);
-  await downloadService.syncJob(btih);
-  const job = trackedJobs.get(btih) ?? downloadService.getJobs().find((item) => item.btih === btih);
+  await downloadService.syncJob(jobId);
+  const job = trackedJobs.get(jobId) ?? downloadService.getJobs().find((item) => item.jobId === jobId);
   if (!job) {
-    await safeEditMessageText(ctx, `Job ${btih} not found.`);
+    await safeEditMessageText(ctx, `Job ${jobId} not found.`);
     return;
   }
   await safeEditMessageText(ctx, formatJobDetail(job), buildJobActionsKeyboard(job));
@@ -382,18 +381,18 @@ bot.action(/^refresh:(.+)$/, async (ctx) => {
 bot.action(/^delete:(.+)$/, async (ctx) => {
   const match = ctx.match as RegExpExecArray | undefined;
   const rawId = match?.[1];
-  const btih = rawId ? decodeURIComponent(rawId) : undefined;
+  const jobId = rawId ? decodeURIComponent(rawId) : undefined;
   const chatId = ctx.chat?.id;
-  if (!btih || !chatId) {
+  if (!jobId || !chatId) {
     await safeAnswerCallback(ctx);
     return;
   }
   await safeAnswerCallback(ctx);
-  const existing = trackedJobs.get(btih) ?? downloadService.getJobs().find((item) => item.btih === btih);
-  removalSuppressions.set(btih, chatId);
-  await downloadService.remove(btih);
+  const existing = trackedJobs.get(jobId) ?? downloadService.getJobs().find((item) => item.jobId === jobId);
+  removalSuppressions.set(jobId, chatId);
+  await downloadService.remove(jobId);
   try {
-    await safeEditMessageText(ctx, `Job removed: ${existing?.label ?? btih}`);
+    await safeEditMessageText(ctx, `Job removed: ${existing?.label ?? jobId}`);
   } catch (error) {
     console.error('Failed to edit job message after deletion:', error);
   }
@@ -401,38 +400,43 @@ bot.action(/^delete:(.+)$/, async (ctx) => {
 });
 
 downloadService.on('ready', (jobs) => {
-  jobs.forEach((job) => trackedJobs.set(job.btih, job));
+  jobs.forEach((job) => trackedJobs.set(job.jobId, job));
 });
 
 downloadService.on('jobUpdated', (job) => {
-  const previous = trackedJobs.get(job.btih);
+  const previous = trackedJobs.get(job.jobId);
   const statusChanged = !previous || previous.lastKnownStatus !== job.lastKnownStatus;
-  const previousLink = previous?.redirectUrl ?? null;
-  const currentLink = job.redirectUrl ?? null;
+  const previousLink = previous?.shortUrl ?? previous?.s3Url ?? null;
+  const currentLink = job.shortUrl ?? job.s3Url ?? null;
   const linkReady = !previousLink && !!currentLink;
-  trackedJobs.set(job.btih, job);
+  trackedJobs.set(job.jobId, job);
   if (!statusChanged && !linkReady) {
     return;
   }
   void broadcast(
     [
       `Job update: ${job.label ?? job.btih}`,
+      `Job ID: ${job.jobId}`,
       `Status: ${job.lastKnownStatus}`,
       job.progress !== null ? `Progress: ${Math.round(job.progress * 100)}%` : undefined,
-      currentLink ? `Download: ${currentLink}` : undefined
+      currentLink ? `Download: ${currentLink}` : undefined,
+      job.s3UrlExpiresAt ? `Expires: ${formatDateTime(job.s3UrlExpiresAt)}` : undefined
     ]
       .filter(Boolean)
       .join('\n')
   );
 });
 
-downloadService.on('jobRemoved', (btih) => {
-  const previous = trackedJobs.get(btih);
-  trackedJobs.delete(btih);
-  const label = previous?.label ?? btih;
-  const suppressedChatId = removalSuppressions.get(btih);
-  removalSuppressions.delete(btih);
-  void broadcast(`Job removed: ${label}`, suppressedChatId !== undefined ? { excludeChatId: suppressedChatId } : undefined);
+downloadService.on('jobRemoved', (jobId) => {
+  const previous = trackedJobs.get(jobId);
+  trackedJobs.delete(jobId);
+  const label = previous?.label ?? jobId;
+  const suppressedChatId = removalSuppressions.get(jobId);
+  removalSuppressions.delete(jobId);
+  void broadcast(
+    `Job removed: ${label}`,
+    suppressedChatId !== undefined ? { excludeChatId: suppressedChatId } : undefined
+  );
 });
 
 downloadService.on('error', (error) => {
