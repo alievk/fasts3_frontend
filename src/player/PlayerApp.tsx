@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 if (typeof window !== 'undefined') {
   console.log('[Player] bundle loaded');
@@ -9,22 +9,79 @@ type PlayerState =
   | { status: 'error'; message: string }
   | { status: 'ready'; url: string };
 
-const filenameFromUrl = (url: string): string => {
+type PlayerRuntimeConfig = {
+  apiBaseUrl?: string;
+};
+
+const readRuntimeConfig = (): PlayerRuntimeConfig => {
+  if (typeof window === 'undefined') {
+    return {};
+  }
+
+  const globalValue = (window as typeof window & { __TORRENT_PLAYER_CONFIG__?: unknown }).__TORRENT_PLAYER_CONFIG__;
+  if (!globalValue || typeof globalValue !== 'object') {
+    return {};
+  }
+
+  const candidate = globalValue as Record<string, unknown>;
+  const apiBaseUrl =
+    typeof candidate.apiBaseUrl === 'string' && candidate.apiBaseUrl.trim().length > 0
+      ? candidate.apiBaseUrl.trim()
+      : undefined;
+
+  return { apiBaseUrl };
+};
+
+const extractFileMetadata = (url: string): { filename: string; extension: string | null; mimeType: string | null } => {
+  const fallback = { filename: 'Video', extension: null, mimeType: null };
   try {
     const parsed = new URL(url);
     const segments = parsed.pathname.split('/');
     const candidate = segments[segments.length - 1] ?? '';
-    if (candidate.length === 0) {
-      return 'Video';
-    }
-    return decodeURIComponent(candidate);
+    const filename = candidate.length > 0 ? decodeURIComponent(candidate) : 'Video';
+    const extension = filename.includes('.') ? filename.split('.').pop()?.toLowerCase() ?? null : null;
+    const mimeType = (() => {
+      switch (extension) {
+        case 'mp4':
+          return 'video/mp4';
+        case 'webm':
+          return 'video/webm';
+        case 'mov':
+          return 'video/quicktime';
+        case 'mkv':
+          return 'video/x-matroska';
+        case 'avi':
+          return 'video/x-msvideo';
+        default:
+          return null;
+      }
+    })();
+    return { filename, extension, mimeType };
   } catch {
-    return 'Video';
+    return fallback;
   }
+};
+
+const filenameFromUrl = (url: string): string => {
+  return extractFileMetadata(url).filename;
+};
+
+const guessMimeType = (url: string): string | null => {
+  return extractFileMetadata(url).mimeType;
+};
+
+const isProbablyUnsupported = (url: string): boolean => {
+  const { extension } = extractFileMetadata(url);
+  if (!extension) {
+    return false;
+  }
+  return extension !== 'mp4';
 };
 
 export const PlayerApp: React.FC = () => {
   const [playerState, setPlayerState] = useState<PlayerState>({ status: 'loading' });
+  const runtimeConfig = useMemo(() => readRuntimeConfig(), []);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
 
   const displayName = useMemo(() => {
     if (playerState.status === 'ready') {
@@ -37,13 +94,10 @@ export const PlayerApp: React.FC = () => {
     const params = new URLSearchParams(window.location.search);
     const jobIdParam = params.get('job_id')?.trim() ?? params.get('jobId')?.trim() ?? '';
     const rawUrl = params.get('videoUrl')?.trim() ?? '';
-    const apiBaseParam = params.get('apiBase')?.trim() ?? params.get('api_base')?.trim() ?? '';
-    const tokenParam = params.get('token')?.trim() ?? '';
 
     console.log('[Player] query params', {
       jobId: jobIdParam || null,
-      videoUrl: rawUrl || null,
-      apiBase: apiBaseParam || null
+      videoUrl: rawUrl || null
     });
 
     const resolveVideoUrl = (value: string): string => {
@@ -67,14 +121,13 @@ export const PlayerApp: React.FC = () => {
     };
 
     const resolveApiBase = (): string => {
-      const trimmed = apiBaseParam || '';
-      if (trimmed) {
+      if (runtimeConfig.apiBaseUrl) {
         try {
-          const normalized = new URL(trimmed);
+          const normalized = new URL(runtimeConfig.apiBaseUrl);
           return normalized.toString().replace(/\/$/, '');
         } catch (error) {
           throw new Error(
-            `Invalid apiBase parameter: ${error instanceof Error ? error.message : String(error)}`
+            `Invalid runtime apiBase: ${error instanceof Error ? error.message : String(error)}`
           );
         }
       }
@@ -94,10 +147,6 @@ export const PlayerApp: React.FC = () => {
     const fetchJson = async (endpoint: URL): Promise<unknown> => {
       console.log('[Player] fetching', endpoint.toString());
       const headers: Record<string, string> = {};
-      if (tokenParam) {
-        headers.Authorization = `Bearer ${tokenParam}`;
-      }
-
       let response: Response;
       try {
         response = await fetch(endpoint.toString(), { headers });
@@ -157,7 +206,7 @@ export const PlayerApp: React.FC = () => {
 
     const fetchJobDownloadUrl = async (jobId: string, apiBase: string): Promise<string> => {
       const normalizedBase = apiBase.replace(/\/$/, '');
-      const detailEndpoint = new URL(`/jobs/${encodeURIComponent(jobId)}`, `${normalizedBase}/`);
+      const detailEndpoint = new URL(`jobs/${encodeURIComponent(jobId)}`, `${normalizedBase}/`);
       const payload = (await fetchJson(detailEndpoint)) as Record<string, unknown> | undefined;
 
       if (!payload || typeof payload !== 'object') {
@@ -177,25 +226,28 @@ export const PlayerApp: React.FC = () => {
         throw new Error(`Job ${jobId} is ${status}. Try again later.`);
       }
 
-      let downloadUrl = extractUrl(payload.s3_url ?? null);
-      let expiresAt = typeof payload.s3_url_expires_at === 'string' ? payload.s3_url_expires_at : null;
+      const s3Url = extractUrl(payload.s3_url ?? null);
+      const expiresAt = typeof payload.s3_url_expires_at === 'string' ? payload.s3_url_expires_at : null;
+      const shortUrl = extractUrl(payload.short_url ?? null);
 
-      if (!downloadUrl || isExpired(expiresAt)) {
-        const presignEndpoint = new URL(`/jobs/${encodeURIComponent(jobId)}/presign_link`, `${normalizedBase}/`);
-        const presign = (await fetchJson(presignEndpoint)) as Record<string, unknown> | undefined;
-        downloadUrl = extractUrl(presign?.s3_url ?? null);
-        expiresAt = typeof presign?.expires_at === 'string' ? presign.expires_at : null;
+      if (s3Url && (!expiresAt || !isExpired(expiresAt))) {
+        return s3Url;
       }
 
-      if (!downloadUrl) {
-        throw new Error('Backend did not provide a downloadable URL.');
+      if (s3Url && expiresAt && isExpired(expiresAt)) {
+        console.warn('[Player] s3_url expired at', expiresAt);
       }
 
-      if (expiresAt) {
-        console.log('[Player] download link expires at', expiresAt);
+      if (shortUrl) {
+        console.log('[Player] falling back to short_url');
+        return shortUrl;
       }
 
-      return downloadUrl;
+      if (s3Url) {
+        throw new Error('Download link expired. Try again later.');
+      }
+
+      throw new Error('Backend did not provide a downloadable URL.');
     };
 
     let cancelled = false;
@@ -268,7 +320,64 @@ export const PlayerApp: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [runtimeConfig]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || playerState.status !== 'ready') {
+      return;
+    }
+
+    const onLoaded = (): void => {
+      console.log('[Player] metadata loaded', {
+        duration: Number.isFinite(video.duration) ? video.duration : null,
+        readyState: video.readyState
+      });
+    };
+
+    const onError = (): void => {
+      const error = video.error;
+      let message = 'Video playback failed.';
+      if (error) {
+        switch (error.code) {
+          case error.MEDIA_ERR_ABORTED:
+            message = 'Playback aborted.';
+            break;
+          case error.MEDIA_ERR_NETWORK:
+            message = 'Network error while streaming the video.';
+            break;
+          case error.MEDIA_ERR_DECODE:
+            message = 'Browser could not decode this video format.';
+            break;
+          case error.MEDIA_ERR_SRC_NOT_SUPPORTED:
+            message = 'Video format not supported by this browser.';
+            break;
+          default:
+            message = 'Unknown playback error.';
+        }
+      }
+      console.error('[Player] video error', { code: error?.code, message: error?.message });
+      setPlayerState({
+        status: 'error',
+        message: `${message} Use the download button to save the file locally.`
+      });
+    };
+
+    video.addEventListener('loadedmetadata', onLoaded);
+    video.addEventListener('error', onError);
+
+    return () => {
+      video.removeEventListener('loadedmetadata', onLoaded);
+      video.removeEventListener('error', onError);
+    };
+  }, [playerState]);
+
+  const mediaType = useMemo(() => {
+    if (playerState.status === 'ready') {
+      return guessMimeType(playerState.url);
+    }
+    return null;
+  }, [playerState]);
 
   useEffect(() => {
     if (playerState.status === 'ready') {
@@ -431,15 +540,18 @@ export const PlayerApp: React.FC = () => {
     );
   }
 
+  const showFormatWarning = playerState.status === 'ready' && isProbablyUnsupported(playerState.url);
+
   return (
     <div className="page">
       <style>{styles}</style>
       <header className="page__header">
         <h1>{displayName}</h1>
-        <p>Stream a presigned file, download for offline viewing, or AirPlay in Safari.</p>
+        <p>Stream, download for offline viewing, or AirPlay in Safari.</p>
       </header>
       <section className="player">
         <video
+          ref={videoRef}
           key={playerState.url}
           controls
           playsInline
@@ -447,9 +559,14 @@ export const PlayerApp: React.FC = () => {
           preload="metadata"
           poster=""
         >
-          <source src={playerState.url} />
+          <source src={playerState.url} type={mediaType ?? undefined} />
         </video>
         <div className="actions">
+          {showFormatWarning ? (
+            <div className="message message--note">
+              This file may not play in the browser. Use the download button if playback does not start.
+            </div>
+          ) : null}
           <a className="button" href={playerState.url} download rel="noopener" target="_blank">
             Download
           </a>

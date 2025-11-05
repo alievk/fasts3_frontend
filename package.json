@@ -9,7 +9,7 @@
     "start": "node dist/player/main.js",
     "lint": "tsc --noEmit",
     "bot": "tsx src/telegramBot.ts",
-    "serve-player": "npx http-server . -p 8080 --cors"
+    "serve-player": "node scripts/servePlayer.mjs"
   },
   "dependencies": {
     "clipboardy": "4.0.0",

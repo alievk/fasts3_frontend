@@ -1,3 +1,11 @@
+CURRENT STAGE: DEVELOPMENT
+
+# Stage rules
+## Development
+- No backward compatibility code
+- No DB/configs migration code
+- No checking for token/password reliability. If it's "change-me", it's OK
+
 # Coding style
 ## Concise and Clear, Not Spaghetti Code
 
@@ -40,6 +48,3 @@ Instead, keep to the following plan:
 
 # User (Me) is Smarter Than AI (You)
 If you ever have doubts or anticipate substantial changes, always consult me first. My insights will be more valuable and aligned with our goals than your autonomous decisions.
-
-# Other
-ATTENTION: The product is not launched, no backward compatibility (for databases, APIs etc) is required.

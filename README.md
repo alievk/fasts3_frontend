@@ -64,13 +64,20 @@ The bot uses the same job store and download service as the CLI, so both interfa
 
 ## Browser Player
 
-The static player lives in `public/player/index.html` and hydrates against `dist/player/main.js` (emitted by `npm run build`). Launch it with:
+The static player lives in `public/player/index.html` and hydrates against `dist/player/main.js` (emitted by `npm run build`). To use it:
 
-- `?job_id=<uuid>` – fetches job detail from the backend, refreshes the presigned link if necessary, and streams it directly.
-- `?videoUrl=<https-url>` – direct HTTP(S) media link to stream in the browser.
-- Quick local hosting: `npm run serve-player` (wraps `npx http-server`) exposes the repo root at `http://localhost:8080`, so `/public/player/` and `/dist/player/main.js` load correctly.
+1. From the repo root run `npm run serve-player` and keep the process running. The helper script loads `.env`, writes `public/player/runtime-config.js` with `TORRENT_API_URL`, then serves the repository via `http://localhost:8080` so `/public/player/` and `/dist/player/main.js` resolve correctly.
+2. Open the player with one of the supported query parameters:
+   - `?job_id=<uuid>` – fetches job detail from the backend, uses the provided `s3_url` when valid, and falls back to the backend-managed `short_url`. Example: `http://localhost:8080/public/player/?job_id=330cb12ff57c46f0b43f6b17727b3b84` (replace the host with your deployment, e.g. `http://ec2-16-170-209-29.eu-north-1.compute.amazonaws.com:8080/public/player/?job_id=...`).
+   - `?videoUrl=<https-url>` – direct HTTP(S) media link to stream in the browser. Example: `http://localhost:8080/public/player/?videoUrl=https%3A%2F%2Fexample.com%2Ffile.mp4`.
+
+The player always prefers the runtime configuration and no longer reads `apiBase` query parameters; override the API base by editing `.env` before launching `npm run serve-player`.
+
+Browser support matches the underlying media codecs: MP4/H.264 generally works everywhere, while containers such as MKV may require downloading the file and playing it locally.
 
 Host `public/` behind a static web server to let users stream or download files without exposing raw S3 URLs.
+
+For production deployments, you can serve the static assets behind an authenticated reverse proxy if you need additional access control (see `docs/player_proxy.md`).
 
 ## Data & Persistence
 
