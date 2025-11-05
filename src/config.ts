@@ -59,6 +59,10 @@ export const loadConfig = (): Config => {
   const searchMinSizeBytes = Math.floor(resolvedMinGiB * 1024 * 1024 * 1024);
   const searchMaxSizeBytes = Math.floor(resolvedMaxGiB * 1024 * 1024 * 1024);
   const searchRequestTimeoutMs = parsePositiveInt(process.env.TORRENT_SEARCH_REQUEST_TIMEOUT_MS) ?? DEFAULT_SEARCH_TIMEOUT_MS;
+  const playerBaseUrl = process.env.PLAYER_BASE_URL;
+  if (!playerBaseUrl) {
+    throw new Error('PLAYER_BASE_URL is required');
+  }
 
   return {
     apiBaseUrl: process.env.TORRENT_API_URL ?? DEFAULT_API_BASE_URL,
@@ -69,6 +73,7 @@ export const loadConfig = (): Config => {
     searchPageSize,
     searchRequestTimeoutMs,
     searchMinSizeBytes,
-    searchMaxSizeBytes
+    searchMaxSizeBytes,
+    playerBaseUrl
   };
 };

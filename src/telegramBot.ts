@@ -147,13 +147,16 @@ const formatDateTime = (primary: string | Date | null | undefined, fallback?: Da
   }).format(date);
 };
 
-const formatJobDetail = (job: StoredJob): string => {
-  const statusUpdated = formatDateTime(job.statusUpdatedAt ?? job.lastSyncedAt ?? null);
-  const lastSynced = formatDateTime(job.lastSyncedAt ?? null);
+const buildPlayerUrl = (jobId: string): string => {
+  const normalizedBase = config.playerBaseUrl.replace(/\/+$/, '');
+  return `${normalizedBase}/public/player/?job_id=${encodeURIComponent(jobId)}`;
+};
+
+const formatJobInfoLines = (job: StoredJob): string[] => {
   const downloadLink = job.shortUrl ?? job.s3Url ?? null;
   const expiresAt = job.s3UrlExpiresAt ? formatDateTime(job.s3UrlExpiresAt) : undefined;
+  const playerLink = job.lastKnownStatus === 'completed' ? buildPlayerUrl(job.jobId) : undefined;
   const lines = [
-    `Title: ${job.label ?? job.btih}`,
     `Job ID: ${job.jobId}`,
     `BTIH: ${job.btih}`,
     `Status: ${job.lastKnownStatus}`,
@@ -167,11 +170,14 @@ const formatJobDetail = (job: StoredJob): string => {
     `Size: ${formatSize(job.sizeBytes ?? null)}`,
     downloadLink ? `Download: ${downloadLink}` : undefined,
     expiresAt ? `Link expires: ${expiresAt}` : undefined,
-    job.error ? `Error: ${job.error}` : undefined,
-    `Last status change: ${statusUpdated}`,
-    `Last sync: ${lastSynced}`
+    playerLink ? `Player: ${playerLink}` : undefined,
+    job.error ? `Error: ${job.error}` : undefined
   ];
-  return lines.filter(Boolean).join('\n');
+  return lines.filter((line): line is string => Boolean(line));
+};
+
+const formatJobDetail = (job: StoredJob): string => {
+  return [`Title: ${job.label ?? job.btih}`, ...formatJobInfoLines(job)].join('\n');
 };
 
 const normalizeTitle = (title: string): string => {
@@ -423,17 +429,7 @@ downloadService.on('jobUpdated', (job) => {
   if (!statusChanged && !linkReady) {
     return;
   }
-  void broadcast(
-    [
-      `Job completed: ${job.label ?? job.btih}`,
-      `Job ID: ${job.jobId}`,
-      `Status: ${job.lastKnownStatus}`,
-      `Download: ${currentLink}`,
-      job.s3UrlExpiresAt ? `Expires: ${formatDateTime(job.s3UrlExpiresAt)}` : undefined
-    ]
-      .filter(Boolean)
-      .join('\n')
-  );
+  void broadcast([`Job completed: ${job.label ?? job.btih}`, ...formatJobInfoLines(job)].join('\n'));
 });
 
 downloadService.on('jobRemoved', (jobId) => {

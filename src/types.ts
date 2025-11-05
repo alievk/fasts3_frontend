@@ -94,6 +94,7 @@ export interface Config {
   searchRequestTimeoutMs: number;
   searchMinSizeBytes?: number;
   searchMaxSizeBytes?: number;
+  playerBaseUrl: string;
 }
 
 export interface ApiClient {
