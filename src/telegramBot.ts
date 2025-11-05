@@ -315,7 +315,14 @@ bot.action(/^start:(\d+)$/, async (ctx) => {
     const job = await downloadService.startDownload(result);
     await safeAnswerCallback(ctx, 'Download started.');
     await ctx.editMessageReplyMarkup(undefined);
-    await ctx.reply(`Started ${result.title}\nJob ID: ${job.jobId}\nBTIH: ${job.btih}`);
+    await ctx.reply(
+      [
+        `Started ${result.title}`,
+        `Job ID: ${job.jobId}`,
+        `BTIH: ${job.btih}`,
+        `\nCheck status: /jobs`
+      ].join('\n')
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     await safeAnswerCallback(ctx, 'Failed to start download', { show_alert: true });
@@ -410,16 +417,18 @@ downloadService.on('jobUpdated', (job) => {
   const currentLink = job.shortUrl ?? job.s3Url ?? null;
   const linkReady = !previousLink && !!currentLink;
   trackedJobs.set(job.jobId, job);
+  if (job.lastKnownStatus !== 'completed' || !currentLink) {
+    return;
+  }
   if (!statusChanged && !linkReady) {
     return;
   }
   void broadcast(
     [
-      `Job update: ${job.label ?? job.btih}`,
+      `Job completed: ${job.label ?? job.btih}`,
       `Job ID: ${job.jobId}`,
       `Status: ${job.lastKnownStatus}`,
-      job.progress !== null ? `Progress: ${Math.round(job.progress * 100)}%` : undefined,
-      currentLink ? `Download: ${currentLink}` : undefined,
+      `Download: ${currentLink}`,
       job.s3UrlExpiresAt ? `Expires: ${formatDateTime(job.s3UrlExpiresAt)}` : undefined
     ]
       .filter(Boolean)
