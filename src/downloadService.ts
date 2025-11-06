@@ -1,12 +1,20 @@
 import EventEmitter from 'node:events';
-import { ApiClient, JobDetail, JobStatus, SearchResult, SearchResultPipeline, StoredJob } from './types.js';
-import { JobStore } from './jobStore.js';
+import {
+  ApiClient,
+  ClientRegistry,
+  JobDetail,
+  JobStatus,
+  OwnedJob,
+  SearchResult,
+  SearchResultPipeline,
+  StoredJob
+} from './types.js';
 
 type DownloadServiceEvents = {
-  jobUpdated: (job: StoredJob) => void;
-  jobRemoved: (jobId: string) => void;
+  jobUpdated: (job: OwnedJob) => void;
+  jobRemoved: (job: OwnedJob) => void;
   error: (error: Error) => void;
-  ready: (jobs: StoredJob[]) => void;
+  ready: (jobs: OwnedJob[]) => void;
 };
 
 const PRESIGNED_REFRESH_THRESHOLD_MS = 5 * 60 * 1000;
@@ -66,14 +74,15 @@ const newStoredJob = (
 });
 
 export class DownloadService extends EventEmitter {
-  private jobs = new Map<string, StoredJob>();
+  private jobs = new Map<string, OwnedJob>();
   private initialized = false;
 
   constructor(
     private readonly apiClient: ApiClient,
-    private readonly jobStore: JobStore,
+    private readonly clientRegistry: ClientRegistry,
     private readonly searchLimit: number,
-    private readonly searchPipeline: SearchResultPipeline = []
+    private readonly searchPipeline: SearchResultPipeline = [],
+    private readonly defaultClientId?: string
   ) {
     super();
   }
@@ -104,16 +113,21 @@ export class DownloadService extends EventEmitter {
       return;
     }
 
-    const data = await this.jobStore.load();
-    Object.values(data.jobs).forEach((job) => {
+    const storedJobs = await this.clientRegistry.listAllJobs();
+    storedJobs.forEach((job) => {
       this.jobs.set(job.jobId, job);
     });
     this.initialized = true;
     this.emit('ready', this.getJobs());
   }
 
-  getJobs(): StoredJob[] {
+  getJobs(): OwnedJob[] {
     return [...this.jobs.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  getJobsForClient(clientId?: string): OwnedJob[] {
+    const owner = this.resolveClientId(clientId);
+    return this.getJobs().filter((job) => job.clientId === owner);
   }
 
   async search(query: string): Promise<SearchResult[]> {
@@ -124,7 +138,8 @@ export class DownloadService extends EventEmitter {
     return this.applySearchPipeline(results);
   }
 
-  async startDownload(result: SearchResult): Promise<StoredJob> {
+  async startDownload(result: SearchResult, clientId?: string): Promise<OwnedJob> {
+    const owner = this.resolveClientId(clientId);
     try {
       const response = await this.apiClient.createJob(result.magnet, result.title);
       const stored = newStoredJob(
@@ -144,13 +159,13 @@ export class DownloadService extends EventEmitter {
         response.s3UrlExpiresAt,
         response.shortUrl
       );
-      this.jobs.set(stored.jobId, stored);
-      await this.jobStore.upsert(stored);
-      this.emit('jobUpdated', stored);
+      const owned = await this.clientRegistry.bindJobToClient(stored, owner);
+      this.jobs.set(owned.jobId, owned);
+      this.emit('jobUpdated', owned);
       if (response.status === 'completed' || response.status === 'error') {
         await this.syncJob(response.jobId);
       }
-      return stored;
+      return owned;
     } catch (error) {
       this.emit('error', error instanceof Error ? error : new Error(String(error)));
       throw error;
@@ -175,7 +190,10 @@ export class DownloadService extends EventEmitter {
         return;
       }
 
-      const existing = this.jobs.get(jobId);
+      const existing = this.jobs.get(jobId) ?? (await this.clientRegistry.getJob(jobId));
+      if (!existing) {
+        return;
+      }
       let updated = mapDetailToStored(detail, existing ?? undefined);
 
       if (detail.status === 'completed') {
@@ -199,9 +217,10 @@ export class DownloadService extends EventEmitter {
         }
       }
 
-      this.jobs.set(jobId, updated);
-      await this.jobStore.upsert(updated);
-      this.emit('jobUpdated', updated);
+      const owned: OwnedJob = { ...updated, clientId: existing.clientId };
+      this.jobs.set(jobId, owned);
+      await this.clientRegistry.updateJob(owned);
+      this.emit('jobUpdated', owned);
     } catch (error) {
       this.emit('error', error instanceof Error ? error : new Error(String(error)));
     }
@@ -238,12 +257,13 @@ export class DownloadService extends EventEmitter {
   }
 
   private async removeLocal(jobId: string): Promise<void> {
-    if (!this.jobs.has(jobId)) {
+    const existing = this.jobs.get(jobId) ?? (await this.clientRegistry.getJob(jobId));
+    if (!existing) {
       return;
     }
     this.jobs.delete(jobId);
-    await this.jobStore.remove(jobId);
-    this.emit('jobRemoved', jobId);
+    await this.clientRegistry.deleteJob(jobId);
+    this.emit('jobRemoved', existing);
   }
 
   private async applySearchPipeline(results: SearchResult[]): Promise<SearchResult[]> {
@@ -276,5 +296,13 @@ export class DownloadService extends EventEmitter {
     }
 
     return expiresAt - Date.now() <= PRESIGNED_REFRESH_THRESHOLD_MS;
+  }
+
+  private resolveClientId(clientId?: string): string {
+    const resolved = clientId ?? this.defaultClientId;
+    if (!resolved) {
+      throw new Error('clientId is required');
+    }
+    return resolved;
   }
 }

@@ -34,13 +34,12 @@ const parsePositiveFloat = (value: string | undefined): number | undefined => {
   return parsed;
 };
 
-const resolveStatePath = (): string => {
-  if (process.env.TORRENT_CLI_STATE_PATH) {
-    return path.resolve(process.env.TORRENT_CLI_STATE_PATH);
+const resolveClientDbPath = (): string => {
+  if (process.env.TORRENT_CLIENT_DB_PATH) {
+    return path.resolve(process.env.TORRENT_CLIENT_DB_PATH);
   }
 
-  const projectCache = path.resolve('.cache', 'torrent-cli', 'jobs.json');
-  return projectCache;
+  return path.resolve('.cache', 'torrent-cli', 'clients.sqlite');
 };
 
 export const loadConfig = (): Config => {
@@ -68,12 +67,12 @@ export const loadConfig = (): Config => {
     apiBaseUrl: process.env.TORRENT_API_URL ?? DEFAULT_API_BASE_URL,
     apiToken: process.env.TORRENT_API_TOKEN,
     pollingIntervalMs,
-    statePath: resolveStatePath(),
     searchLimit,
     searchPageSize,
     searchRequestTimeoutMs,
     searchMinSizeBytes,
     searchMaxSizeBytes,
-    playerBaseUrl
+    playerBaseUrl,
+    clientDbPath: resolveClientDbPath()
   };
 };

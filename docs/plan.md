@@ -18,18 +18,18 @@
 
 ### Modules
 1. `config.ts`
-   - Loads environment defaults (`TORRENT_API_URL`, `TORRENT_API_TOKEN`, `TORRENT_CLI_POLL_MS`, `TORRENT_CLI_STATE_PATH`) and returns `Config`.
+   - Loads environment defaults (`TORRENT_API_URL`, `TORRENT_API_TOKEN`, `TORRENT_CLI_POLL_MS`, `TORRENT_CLIENT_DB_PATH`) and returns `Config`.
    - Ensures polling interval never drops below one second.
 2. `apiClient.ts`
    - Wraps `fetch` with JSON parsing, timeout control, and error normalization.
    - Exposes `search`, `createJob`, `getJob`, `deleteJob`, `health`, `getJobPresignedLink`.
    - Normalizes snake_case payloads into camelCase TypeScript models.
-3. `jobStore.ts`
-   - Persists jobs under `.cache/torrent-cli/jobs.json` by default.
-   - Performs atomic writes (temp file + rename) and keeps an in-memory cache for subsequent reads.
+3. `clientRegistry.ts` / `sqliteClientRegistry.ts`
+   - Abstract persistence for clients/jobs with a default SQLite implementation (`.cache/torrent-cli/clients.sqlite`).
+   - Handles client registration (transport metadata), job binding, ownership queries, and notification target lookups.
 4. `downloadService.ts`
    - Event-driven orchestrator built on `EventEmitter`.
-   - Responsibilities: initialize from `jobStore`, call API actions, persist updates, propagate events (`ready`, `jobUpdated`, `jobRemoved`, `error`).
+   - Responsibilities: initialize from the client registry, call API actions, persist ownership updates, propagate events (`ready`, `jobUpdated`, `jobRemoved`, `error`).
    - `syncAll` polls in-progress jobs (`queued`/`downloading`). `syncJob` handles orphan cleanup on 404 and fetches presigned links for completed jobs when needed.
 5. `poller.ts`
    - Simple interval manager that invokes `downloadService.syncAll()` until stopped.
@@ -64,23 +64,9 @@
 6. Deletion attempts remove the job locally even if the backend request fails; a 404 from the backend also causes local cleanup.
 
 ## Persistence Strategy
-- Jobs persist in JSON:
-  ```json
-  {
-    "jobs": {
-      "job-uuid": {
-        "label": "Ubuntu Noble Desktop",
-        "createdAt": "ISO8601",
-        "lastKnownStatus": "downloading",
-        "lastSyncedAt": "ISO8601",
-        "progress": 0.42,
-        "s3Url": null
-      }
-    }
-  }
-  ```
-- `TORRENT_CLI_STATE_PATH` overrides the default location. Writes are atomic and directories are created on demand.
-- **Critical:** JSON persistence will not scale beyond small single-user workloads. Plan a migration to a proper database (SQLite/Postgres/Redis) with concurrency control, indexing, and retention policies before onboarding high user volumes.
+- Clients and jobs persist in SQLite (`TORRENT_CLIENT_DB_PATH`, default `.cache/torrent-cli/clients.sqlite`) via `better-sqlite3`.
+- Each frontend registers a `clientId` (CLI uses the built-in `admin-cli`, Telegram derives `telegram:<chatId>`), and every stored job carries that identifier so ownership filtering and notifications remain scoped.
+- The registry auto-creates tables if the database is missing; delete the file for a clean slate.
 
 ## Error Handling & Resilience
 - Requests time out after 10s; aborted calls surface as user-visible errors.

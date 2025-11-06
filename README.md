@@ -46,7 +46,7 @@ npm run cli
 - Completed jobs expose the backend-provided download link (short URL or direct S3) and allow copying it with the `c` shortcut.
 - Errors surface at the bottom of the UI; fix configuration or backend issues and retry with Enter.
 
-Local state persists under `TORRENT_CLI_STATE_PATH`, so jobs survive restarts. The poller keeps queued/downloading jobs in sync and refreshes presigned links as they near expiry.
+Local ownership state lives in the shared SQLite registry (`TORRENT_CLIENT_DB_PATH`, default `.cache/torrent-cli/clients.sqlite`). The CLI registers itself as the admin client and can inspect all jobs regardless of owner. The poller keeps queued/downloading jobs in sync and refreshes presigned links as they near expiry.
 
 ## Telegram Bot
 
@@ -60,7 +60,7 @@ npm run bot
 - `/jobs` lists known jobs with detail/delete actions; updates broadcast to active chats.
 - Redirect links surface automatically once the backend exposes a presigned URL.
 
-The bot uses the same job store and download service as the CLI, so both interfaces remain consistent.
+The bot works off the same SQLite-backed client registry and download service, so multiple chats can safely share the backend without seeing each other’s jobs.
 
 ## Browser Player
 
@@ -81,10 +81,10 @@ For production deployments, you can serve the static assets behind an authentica
 
 ## Data & Persistence
 
-- Jobs: JSON file at `TORRENT_CLI_STATE_PATH` (default `.cache/torrent-cli/jobs.json`) written atomically.
+- Clients & jobs: SQLite file at `TORRENT_CLIENT_DB_PATH` (default `.cache/torrent-cli/clients.sqlite`) managed via `better-sqlite3`.
 - Cached presigns refresh automatically when the presigned link is within five minutes of expiry.
 
-Delete the cache files if you need a clean slate; directories are created on demand.
+Delete the SQLite file if you need a clean slate; directories are created on demand.
 
 ## Documentation & Further Work
 

@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { Box, Text, useInput, type Key } from 'ink';
-import { StoredJob } from './types.js';
+import { OwnedJob } from './types.js';
 
 interface JobTrackerProps {
-  jobs: StoredJob[];
+  jobs: OwnedJob[];
   onRemove: (jobId: string) => void;
   disabled?: boolean;
 }

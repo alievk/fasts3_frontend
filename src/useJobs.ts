@@ -1,35 +1,35 @@
 import { useEffect, useState } from 'react';
-import { StoredJob } from './types.js';
+import { OwnedJob } from './types.js';
 import { useServices } from './serviceContext.js';
 
 interface JobsHookState {
-  jobs: StoredJob[];
+  jobs: OwnedJob[];
   ready: boolean;
   lastError?: string;
   clearError: () => void;
 }
 
-const updateJobList = (jobs: StoredJob[], updated: StoredJob): StoredJob[] => {
+const updateJobList = (jobs: OwnedJob[], updated: OwnedJob): OwnedJob[] => {
   const next = jobs.filter((job) => job.jobId !== updated.jobId);
   return [updated, ...next].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 };
 
 export const useJobs = (): JobsHookState => {
   const { downloadService, poller } = useServices();
-  const [jobs, setJobs] = useState<StoredJob[]>([]);
+  const [jobs, setJobs] = useState<OwnedJob[]>([]);
   const [ready, setReady] = useState(false);
   const [lastError, setLastError] = useState<string | undefined>();
 
   useEffect(() => {
-    const handleReady = (initial: StoredJob[]) => {
+    const handleReady = (initial: OwnedJob[]) => {
       setJobs(initial);
       setReady(true);
     };
-    const handleUpdate = (job: StoredJob) => {
+    const handleUpdate = (job: OwnedJob) => {
       setJobs((current) => updateJobList(current, job));
     };
-    const handleRemove = (jobId: string) => {
-      setJobs((current) => current.filter((job) => job.jobId !== jobId));
+    const handleRemove = (job: OwnedJob) => {
+      setJobs((current) => current.filter((item) => item.jobId !== job.jobId));
     };
     const handleError = (error: Error) => {
       setLastError(error.message);

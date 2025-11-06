@@ -2,11 +2,11 @@ import { Telegraf, Markup } from 'telegraf';
 import type { Context } from 'telegraf';
 import { loadConfig } from './config.js';
 import { createApiClient } from './apiClient.js';
-import { JobStore } from './jobStore.js';
 import { DownloadService } from './downloadService.js';
 import { Poller } from './poller.js';
-import { SearchResult, StoredJob } from './types.js';
+import { OwnedJob, SearchResult } from './types.js';
 import { createSearchPipeline } from './searchPipeline.js';
+import { createClientRegistry } from './clientRegistry.js';
 
 const botToken = process.env.TORRENT_TELEGRAM_BOT_TOKEN;
 
@@ -17,9 +17,9 @@ if (!botToken) {
 
 const config = loadConfig();
 const apiClient = createApiClient();
-const jobStore = new JobStore(config.statePath);
+const clientRegistry = createClientRegistry(config.clientDbPath);
 const searchPipeline = createSearchPipeline(config);
-const downloadService = new DownloadService(apiClient, jobStore, config.searchLimit, searchPipeline);
+const downloadService = new DownloadService(apiClient, clientRegistry, config.searchLimit, searchPipeline);
 const poller = new Poller(downloadService, config.pollingIntervalMs);
 const bot = new Telegraf(botToken);
 
@@ -33,8 +33,27 @@ type SearchSession = {
 const searchPageSize = config.searchPageSize;
 
 const searchSessions = new Map<number, SearchSession>();
-const trackedJobs = new Map<string, StoredJob>();
-const removalSuppressions = new Map<string, number>();
+const trackedJobs = new Map<string, OwnedJob>();
+const removalSuppressions = new Map<string, string>();
+
+const buildTelegramClientId = (chatId: number): string => `telegram:${chatId}`;
+
+const ensureTelegramClient = async (chatId: number): Promise<string> => {
+  const clientId = buildTelegramClientId(chatId);
+  await clientRegistry.registerClient(clientId, { type: 'telegram', chatId });
+  return clientId;
+};
+
+const getJobForClient = (jobId: string): OwnedJob | undefined =>
+  trackedJobs.get(jobId) ?? downloadService.getJobs().find((item) => item.jobId === jobId);
+
+const findOwnedJob = (jobId: string, clientId: string): OwnedJob | undefined => {
+  const job = getJobForClient(jobId);
+  if (!job || job.clientId !== clientId) {
+    return undefined;
+  }
+  return job;
+};
 
 let bootstrapPromise: Promise<void> | undefined;
 
@@ -55,6 +74,22 @@ const ensureBootstrapped = (): Promise<void> => {
   return bootstrapPromise;
 };
 
+const sendTelegramMessage = async (
+  chatId: number,
+  message: string,
+  extra?: Parameters<typeof bot.telegram.sendMessage>[2]
+): Promise<void> => {
+  try {
+    await bot.telegram.sendMessage(chatId, message, extra);
+  } catch (error) {
+    const code = (error as { response?: { error_code?: number } }).response?.error_code;
+    if (code === 403) {
+      activeChats.delete(chatId);
+    }
+    console.error(`Failed to deliver message to ${chatId}:`, error);
+  }
+};
+
 const broadcast = async (message: string, options?: { excludeChatId?: number }) => {
   const excludeChatId = options?.excludeChatId;
   if (activeChats.size === 0) {
@@ -65,14 +100,20 @@ const broadcast = async (message: string, options?: { excludeChatId?: number }) 
       if (excludeChatId !== undefined && chatId === excludeChatId) {
         return;
       }
-      try {
-        await bot.telegram.sendMessage(chatId, message);
-      } catch (error) {
-        const code = (error as { response?: { error_code?: number } }).response?.error_code;
-        if (code === 403) {
-          activeChats.delete(chatId);
-        }
-        console.error(`Failed to deliver message to ${chatId}:`, error);
+      await sendTelegramMessage(chatId, message);
+    })
+  );
+};
+
+const notifyJobOwner = async (job: OwnedJob, message: string): Promise<void> => {
+  const targets = await clientRegistry.getNotificationTargets(job.jobId);
+  if (targets.length === 0) {
+    return;
+  }
+  await Promise.all(
+    targets.map(async (target) => {
+      if (target.transport.type === 'telegram') {
+        await sendTelegramMessage(target.transport.chatId, message);
       }
     })
   );
@@ -152,7 +193,7 @@ const buildPlayerUrl = (jobId: string): string => {
   return `${normalizedBase}/public/player/?job_id=${encodeURIComponent(jobId)}`;
 };
 
-const formatJobInfoLines = (job: StoredJob): string[] => {
+const formatJobInfoLines = (job: OwnedJob): string[] => {
   const downloadLink = job.shortUrl ?? job.s3Url ?? null;
   const expiresAt = job.s3UrlExpiresAt ? formatDateTime(job.s3UrlExpiresAt) : undefined;
   const playerLink = job.lastKnownStatus === 'completed' ? buildPlayerUrl(job.jobId) : undefined;
@@ -176,7 +217,7 @@ const formatJobInfoLines = (job: StoredJob): string[] => {
   return lines.filter((line): line is string => Boolean(line));
 };
 
-const formatJobDetail = (job: StoredJob): string => {
+const formatJobDetail = (job: OwnedJob): string => {
   return [`Title: ${job.label ?? job.btih}`, ...formatJobInfoLines(job)].join('\n');
 };
 
@@ -219,7 +260,7 @@ const buildSearchPage = (results: SearchResult[], requestedPage: number) => {
   };
 };
 
-const buildJobActionsKeyboard = (job: StoredJob) => {
+const buildJobActionsKeyboard = (job: OwnedJob) => {
   const encodedId = encodeURIComponent(job.jobId);
   const downloadLink = job.shortUrl ?? job.s3Url ?? null;
   const buttons = [
@@ -230,7 +271,7 @@ const buildJobActionsKeyboard = (job: StoredJob) => {
   return Markup.inlineKeyboard(buttons, { columns: 1 });
 };
 
-const buildJobsKeyboard = (jobs: StoredJob[]) => {
+const buildJobsKeyboard = (jobs: OwnedJob[]) => {
   const buttons = jobs.map((job) =>
     Markup.button.callback(
       `${normalizeTitle(job.label ?? job.btih)} — ${job.lastKnownStatus}`,
@@ -240,18 +281,19 @@ const buildJobsKeyboard = (jobs: StoredJob[]) => {
   return Markup.inlineKeyboard(buttons, { columns: 1 });
 };
 
-const sendJobList = async (chatId: number) => {
-  const jobs = downloadService.getJobs();
+const sendJobList = async (chatId: number, clientId: string) => {
+  const jobs = downloadService.getJobsForClient(clientId);
   if (jobs.length === 0) {
-    await bot.telegram.sendMessage(chatId, 'No active or completed jobs. Run /search to start one.');
+    await sendTelegramMessage(chatId, 'No active or completed jobs. Run /search to start one.');
     return;
   }
-  await bot.telegram.sendMessage(chatId, 'Select a job to view details:', buildJobsKeyboard(jobs));
+  await sendTelegramMessage(chatId, 'Select a job to view details:', buildJobsKeyboard(jobs));
 };
 
 bot.use(async (ctx, next) => {
   if (ctx.chat) {
     activeChats.add(ctx.chat.id);
+    await ensureTelegramClient(ctx.chat.id);
   }
   await ensureBootstrapped();
   return next();
@@ -299,7 +341,8 @@ bot.command('jobs', async (ctx) => {
   if (!chatId) {
     return;
   }
-  await sendJobList(chatId);
+  const clientId = await ensureTelegramClient(chatId);
+  await sendJobList(chatId, clientId);
 });
 
 bot.action(/^start:(\d+)$/, async (ctx) => {
@@ -310,6 +353,7 @@ bot.action(/^start:(\d+)$/, async (ctx) => {
     await safeAnswerCallback(ctx);
     return;
   }
+  const clientId = await ensureTelegramClient(chatId);
   const session = searchSessions.get(chatId);
   const results = session?.results;
   if (!results || Number.isNaN(index) || index < 0 || index >= results.length) {
@@ -318,7 +362,7 @@ bot.action(/^start:(\d+)$/, async (ctx) => {
   }
   const result = results[index];
   try {
-    const job = await downloadService.startDownload(result);
+    const job = await downloadService.startDownload(result, clientId);
     await safeAnswerCallback(ctx, 'Download started.');
     await ctx.editMessageReplyMarkup(undefined);
     await ctx.reply(
@@ -360,12 +404,14 @@ bot.action(/^job:(.+)$/, async (ctx) => {
   const match = ctx.match as RegExpExecArray | undefined;
   const rawId = match?.[1];
   const jobId = rawId ? decodeURIComponent(rawId) : undefined;
-  if (!jobId) {
+  const chatId = ctx.chat?.id;
+  if (!jobId || !chatId) {
     await safeAnswerCallback(ctx);
     return;
   }
   await safeAnswerCallback(ctx);
-  const job = trackedJobs.get(jobId) ?? downloadService.getJobs().find((item) => item.jobId === jobId);
+  const clientId = await ensureTelegramClient(chatId);
+  const job = findOwnedJob(jobId, clientId);
   if (!job) {
     await ctx.reply(`Job ${jobId} not found.`);
     return;
@@ -377,13 +423,15 @@ bot.action(/^refresh:(.+)$/, async (ctx) => {
   const match = ctx.match as RegExpExecArray | undefined;
   const rawId = match?.[1];
   const jobId = rawId ? decodeURIComponent(rawId) : undefined;
-  if (!jobId) {
+  const chatId = ctx.chat?.id;
+  if (!jobId || !chatId) {
     await safeAnswerCallback(ctx);
     return;
   }
   await safeAnswerCallback(ctx);
   await downloadService.syncJob(jobId);
-  const job = trackedJobs.get(jobId) ?? downloadService.getJobs().find((item) => item.jobId === jobId);
+  const clientId = await ensureTelegramClient(chatId);
+  const job = findOwnedJob(jobId, clientId);
   if (!job) {
     await safeEditMessageText(ctx, `Job ${jobId} not found.`);
     return;
@@ -401,15 +449,20 @@ bot.action(/^delete:(.+)$/, async (ctx) => {
     return;
   }
   await safeAnswerCallback(ctx);
-  const existing = trackedJobs.get(jobId) ?? downloadService.getJobs().find((item) => item.jobId === jobId);
-  removalSuppressions.set(jobId, chatId);
+  const clientId = await ensureTelegramClient(chatId);
+  const existing = findOwnedJob(jobId, clientId);
+  if (!existing) {
+    await safeEditMessageText(ctx, `Job ${jobId} not found.`);
+    return;
+  }
+  removalSuppressions.set(jobId, clientId);
   await downloadService.remove(jobId);
   try {
-    await safeEditMessageText(ctx, `Job removed: ${existing?.label ?? jobId}`);
+    await safeEditMessageText(ctx, `Job removed: ${existing.label ?? jobId}`);
   } catch (error) {
     console.error('Failed to edit job message after deletion:', error);
   }
-  await sendJobList(chatId);
+  await sendJobList(chatId, clientId);
 });
 
 downloadService.on('ready', (jobs) => {
@@ -429,19 +482,17 @@ downloadService.on('jobUpdated', (job) => {
   if (!statusChanged && !linkReady) {
     return;
   }
-  void broadcast([`Job completed: ${job.label ?? job.btih}`, ...formatJobInfoLines(job)].join('\n'));
+  void notifyJobOwner(job, [`Job completed: ${job.label ?? job.btih}`, ...formatJobInfoLines(job)].join('\n'));
 });
 
-downloadService.on('jobRemoved', (jobId) => {
-  const previous = trackedJobs.get(jobId);
-  trackedJobs.delete(jobId);
-  const label = previous?.label ?? jobId;
-  const suppressedChatId = removalSuppressions.get(jobId);
-  removalSuppressions.delete(jobId);
-  void broadcast(
-    `Job removed: ${label}`,
-    suppressedChatId !== undefined ? { excludeChatId: suppressedChatId } : undefined
-  );
+downloadService.on('jobRemoved', (job) => {
+  trackedJobs.delete(job.jobId);
+  const suppressedClientId = removalSuppressions.get(job.jobId);
+  removalSuppressions.delete(job.jobId);
+  if (suppressedClientId && suppressedClientId === job.clientId) {
+    return;
+  }
+  void notifyJobOwner(job, `Job removed: ${job.label ?? job.jobId}`);
 });
 
 downloadService.on('error', (error) => {

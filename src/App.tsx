@@ -3,7 +3,7 @@ import { Box, Text, useInput, useApp } from 'ink';
 import SelectInput from 'ink-select-input';
 import { useJobs } from './useJobs.js';
 import { useServices } from './serviceContext.js';
-import { SearchResult, StoredJob } from './types.js';
+import { OwnedJob, SearchResult } from './types.js';
 import { SearchPane } from './SearchPane.js';
 import clipboard from 'clipboardy';
 
@@ -250,7 +250,7 @@ const MainMenu: React.FC<MainMenuProps> = ({ focus, onNavigate, onExit }) => {
 };
 
 interface JobsScreenProps {
-  jobs: StoredJob[];
+  jobs: OwnedJob[];
   focus: boolean;
   onSelect: (jobId: string) => void;
 }
@@ -290,7 +290,7 @@ const JobsScreen: React.FC<JobsScreenProps> = ({ jobs, focus, onSelect }) => {
 };
 
 interface JobDetailScreenProps {
-  job: StoredJob | undefined;
+  job: OwnedJob | undefined;
   focus: boolean;
   onBack: () => void;
   onDelete?: (jobId: string) => Promise<void>;

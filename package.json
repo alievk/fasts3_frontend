@@ -8,10 +8,13 @@
     "build": "tsc --project tsconfig.json",
     "start": "node dist/player/main.js",
     "lint": "tsc --noEmit",
+    "test": "tsx --test src/__tests__/**/*.test.ts",
     "bot": "tsx src/telegramBot.ts",
     "serve-player": "node scripts/servePlayer.mjs"
   },
   "dependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "better-sqlite3": "^12.4.1",
     "clipboardy": "4.0.0",
     "dotenv": "16.4.5",
     "ink": "6.3.1",
