@@ -4,8 +4,8 @@
 A minimal REST API that supports the current CLI frontend. Future frontends (web, Telegram bot) will reuse the same contract. All responses must be JSON.
 
 ## Authentication
-- Use HTTP header `Authorization: Bearer <token>` for every request.
-- API should respond with `401 Unauthorized` when the header is missing or invalid.
+- Use HTTP header `Authorization: Bearer <token>` for every request except `GET /api/jobs/{job_id}`, which stays public so browser-based clients can poll status directly without exposing tokens or adding an auth proxy.
+- Protected endpoints should respond with `401 Unauthorized` when the header is missing or invalid.
 
 ## Base URL
 Assume deployments under `https://<host>/api`. Paths below use this base.
@@ -30,7 +30,7 @@ Assume deployments under `https://<host>/api`. Paths below use this base.
 
 **Query Params:**
 - `query` (string, required): search keywords.
-- `limit` (int, optional, default 5, max 10).
+- `limit` (int, optional, default 5, max 100).
 
 **Response 200:**
 ```json
@@ -87,6 +87,8 @@ Assume deployments under `https://<host>/api`. Paths below use this base.
 ### 4. Get Job Status
 `GET /api/jobs/{job_id}`
 
+No authentication header required.
+
 **Response 200:**
 ```json
 {
@@ -108,7 +110,7 @@ Field notes:
 - `progress` in `[0,1]`, may be `null` if unknown.
 - `s3_bucket`, `s3_object_key`, and `manifest` populate once the upload finishes (cached BTIHs return them immediately).
 - The presign endpoint still returns the actual manifest/content; treat `manifest` here as a pointer only.
-- No download link is returned; clients must call `/api/jobs/{job_id}/presign_link` to fetch a presigned URL once the job is completed.
+- No download link is returned until `/api/jobs/{job_id}/presign_link` is called. After the presign request succeeds, subsequent status calls include `s3_url` and `s3_url_expires_at`.
 - `error` string recommended when `status == "error"`.
 - `status_updated_at` reflects the last transition time persisted in Redis.
 
@@ -134,7 +136,7 @@ Purpose: obtain an HTTPS presigned link for the first uploaded torrent file. Ret
 ```
 
 - `expires_at` is the UTC timestamp when the link becomes invalid.
-- `short_url` is a backend-managed helper link for clients that prefer shorter URLs.
+- `short_url` redirects via the configured redirect service.
 - Return `503` with error payload when presigning is disabled or fails.
 
 ### 6. Delete Job
@@ -160,9 +162,6 @@ Purpose: cancel queued or running jobs and clean up storage.
 - When a download completes, upload all torrent files to S3, then expose the presign endpoint for clients that need a direct download link.
 - Downloads should transition through `queued -> downloading -> uploading -> completed` (or `error`). Progress should increase monotonically when known.
 - Searching and job management should be idempotent; repeating identical requests should not create duplicates.
-
-## Pagination & Bulk Sync (Future Work)
-- Once implemented, add `GET /api/jobs?since=<ISO8601>` returning an array of job summaries. The CLI service layer already has room for this but does not depend on it yet.
 
 ## Error Format
 For non-2xx responses, return JSON in the form:
