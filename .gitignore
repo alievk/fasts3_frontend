@@ -2,6 +2,7 @@ public/media/
 dist/
 node_modules/
 .cache/
+.llm/
 
 .env
 public/player/runtime-config.js
