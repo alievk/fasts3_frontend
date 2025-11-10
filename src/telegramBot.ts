@@ -92,6 +92,13 @@ const searchPipeline = createSearchPipeline(config);
 const downloadService = new DownloadService(apiClient, clientRegistry, config.searchLimit, searchPipeline);
 const poller = new Poller(downloadService, config.pollingIntervalMs);
 const bot = new Telegraf(botToken);
+let botUsername: string | undefined;
+const getBotUsername = (): string => {
+  if (!botUsername) {
+    throw new Error('Bot username is not initialized');
+  }
+  return botUsername;
+};
 
 const botCommands = [
   { command: 'search', description: translateDefault('commands.searchDescription') },
@@ -106,6 +113,7 @@ type SearchSession = {
 };
 
 const searchPageSize = config.searchPageSize;
+const DOWNLOAD_PAYLOAD_PREFIX = 'download_';
 
 type ConversationState =
   | {
@@ -325,8 +333,27 @@ const formatJobDetail = (job: OwnedJob, locale: string): string => {
   return [translate('job.titleLine', locale, { title: job.label ?? job.btih }), ...formatJobInfoLines(job, locale)].join('\n');
 };
 
-const normalizeTitle = (title: string): string => {
-  return title;
+const normalizeTitle = (title: string): string => title;
+const escapeHtml = (value: string): string => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const buildStartLink = (payload: string): string => {
+  const username = getBotUsername();
+  return `https://t.me/${username}?start=${encodeURIComponent(payload)}`;
+};
+const formatDownloadLinkLine = (displayIndex: number, locale: string): string => {
+  const payload = `${DOWNLOAD_PAYLOAD_PREFIX}${displayIndex}`;
+  const label = translate('search.downloadLinkLabel', locale);
+  const link = `<a href="${buildStartLink(payload)}">${escapeHtml(label)}</a>`;
+  return translate('search.downloadLinkLine', locale, { url: link });
+};
+const parseDownloadPayload = (payload?: string | null): number | null => {
+  if (!payload || !payload.startsWith(DOWNLOAD_PAYLOAD_PREFIX)) {
+    return null;
+  }
+  const parsed = Number.parseInt(payload.slice(DOWNLOAD_PAYLOAD_PREFIX.length), 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return null;
+  }
+  return parsed - 1;
 };
 
 const buildSearchPage = (results: SearchResult[], requestedPage: number, locale: string) => {
@@ -336,35 +363,59 @@ const buildSearchPage = (results: SearchResult[], requestedPage: number, locale:
   const pageResults = results.slice(startIndex, startIndex + searchPageSize);
   const lines = pageResults.map((result, offset) => {
     const index = startIndex + offset;
+    const displayIndex = index + 1;
     return [
-      `${index + 1}. ${normalizeTitle(result.title)}`,
-      translate('search.sizeLine', locale, { size: formatSize(result.sizeBytes, locale) }),
-      translate('search.peersLine', locale, { seeders: result.seeders, leechers: result.leechers })
+      `${displayIndex}. ${escapeHtml(normalizeTitle(result.title))}`,
+      escapeHtml(translate('search.sizeLine', locale, { size: formatSize(result.sizeBytes, locale) })),
+      escapeHtml(translate('search.peersLine', locale, { seeders: result.seeders, leechers: result.leechers })),
+      formatDownloadLinkLine(displayIndex, locale)
     ].join('\n');
   });
-  const rows: ReturnType<typeof Markup.button.callback>[][] = pageResults.map((_result, offset) => [
-    Markup.button.callback(
-      translate('search.downloadButton', locale, { index: startIndex + offset + 1 }),
-      `start:${startIndex + offset}`
-    )
-  ]);
   const navButtons: ReturnType<typeof Markup.button.callback>[] = [];
-  if (page > 0) {
-    navButtons.push(Markup.button.callback(translate('search.prevPage', locale), `page:${page - 1}`));
-  }
   if (page < totalPages - 1) {
     navButtons.push(Markup.button.callback(translate('search.nextPage', locale), `page:${page + 1}`));
   }
-  if (navButtons.length > 0) {
-    rows.push(navButtons);
-  }
-  const text = `${lines.join('\n\n')}\n\n${translate('search.pageCounter', locale, { current: page + 1, total: totalPages })}`;
+  const keyboard = navButtons.length > 0 ? Markup.inlineKeyboard([navButtons]) : undefined;
+  const extra = keyboard ? { ...keyboard, parse_mode: 'HTML' as const } : ({ parse_mode: 'HTML' as const });
+  const pageCounter = escapeHtml(translate('search.pageCounter', locale, { current: page + 1, total: totalPages }));
+  const text = `${lines.join('\n\n')}\n\n${pageCounter}`;
   return {
     page,
     totalPages,
     text,
-    keyboard: Markup.inlineKeyboard(rows)
+    extra
   };
+};
+
+const startDownloadFromSession = async (
+  chatId: number,
+  index: number,
+  replyFn: (text: string) => Promise<unknown>
+): Promise<void> => {
+  const locale = getChatLocale(chatId);
+  const clientId = await ensureTelegramClient(chatId);
+  const session = searchSessions.get(chatId);
+  const results = session?.results;
+  if (!results || Number.isNaN(index) || index < 0 || index >= results.length) {
+    await replyFn(translate('search.expired', locale));
+    return;
+  }
+  const result = results[index];
+  try {
+    const job = await downloadService.startDownload(result, clientId);
+    await replyFn(
+      [
+        translate('downloads.summaryTitle', locale, { title: result.title }),
+        translate('job.jobIdLine', locale, { jobId: job.jobId }),
+        translate('job.btihLine', locale, { btih: job.btih }),
+        '',
+        translate('downloads.checkStatusHint', locale)
+      ].join('\n')
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await replyFn(translate('downloads.startFailed', locale, { message }));
+  }
 };
 
 const buildJobActionsKeyboard = (job: OwnedJob, locale: string) => {
@@ -415,6 +466,11 @@ bot.start(async (ctx) => {
   if (!chatId) {
     return;
   }
+  const payloadIndex = parseDownloadPayload(ctx.startPayload);
+  if (payloadIndex !== null) {
+    await startDownloadFromSession(chatId, payloadIndex, (text) => ctx.reply(text));
+    return;
+  }
   await sendStartMessage(chatId, (text, extra) => ctx.reply(text, extra));
 });
 
@@ -461,7 +517,7 @@ bot.on('message', async (ctx, next) => {
     }
     const pageInfo = buildSearchPage(results, 0, getChatLocale(chatId));
     searchSessions.set(chatId, { results, page: pageInfo.page });
-    await ctx.reply(pageInfo.text, pageInfo.keyboard);
+    await ctx.reply(pageInfo.text, pageInfo.extra);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     await ctx.reply(translateForChat(chatId, 'search.failed', { message }));
@@ -475,43 +531,6 @@ bot.command('jobs', async (ctx) => {
   }
   const clientId = await ensureTelegramClient(chatId);
   await sendJobList(chatId, clientId);
-});
-
-bot.action(/^start:(\d+)$/, async (ctx) => {
-  const match = ctx.match as RegExpExecArray | undefined;
-  const index = Number.parseInt(match?.[1] ?? '', 10);
-  const chatId = ctx.chat?.id;
-  if (!chatId) {
-    await safeAnswerCallback(ctx);
-    return;
-  }
-  const locale = getChatLocale(chatId);
-  const clientId = await ensureTelegramClient(chatId);
-  const session = searchSessions.get(chatId);
-  const results = session?.results;
-  if (!results || Number.isNaN(index) || index < 0 || index >= results.length) {
-    await safeAnswerCallback(ctx, translate('search.expired', locale));
-    return;
-  }
-  const result = results[index];
-  try {
-    const job = await downloadService.startDownload(result, clientId);
-    await safeAnswerCallback(ctx, translate('downloads.started', locale));
-    await ctx.editMessageReplyMarkup(undefined);
-    await ctx.reply(
-      [
-        translate('downloads.summaryTitle', locale, { title: result.title }),
-        translate('job.jobIdLine', locale, { jobId: job.jobId }),
-        translate('job.btihLine', locale, { btih: job.btih }),
-        '',
-        translate('downloads.checkStatusHint', locale)
-      ].join('\n')
-    );
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    await safeAnswerCallback(ctx, translate('downloads.startFailedAlert', locale), { show_alert: true });
-    await ctx.reply(translate('downloads.startFailed', locale, { message }));
-  }
 });
 
 bot.action(/^page:(\d+)$/, async (ctx) => {
@@ -531,7 +550,7 @@ bot.action(/^page:(\d+)$/, async (ctx) => {
   const pageInfo = buildSearchPage(session.results, requestedPage, getChatLocale(chatId));
   session.page = pageInfo.page;
   await safeAnswerCallback(ctx);
-  await safeEditMessageText(ctx, pageInfo.text, pageInfo.keyboard);
+  await safeEditMessageText(ctx, pageInfo.text, pageInfo.extra);
 });
 
 bot.action(/^job:(.+)$/, async (ctx) => {
@@ -669,6 +688,11 @@ downloadService.on('error', (error) => {
 
 const startBot = async () => {
   await ensureBootstrapped();
+  const me = await bot.telegram.getMe();
+  botUsername = me.username ?? undefined;
+  if (!botUsername) {
+    throw new Error('Bot username is required');
+  }
   await bot.telegram.setMyCommands(botCommands);
   await bot.launch();
   console.log('Telegram bot started.');

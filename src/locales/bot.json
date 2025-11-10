@@ -11,6 +11,8 @@
     "search.expired": "Результаты поиска устарели. Введи /search ещё раз.",
     "search.sizeLine": "Размер: {size}",
     "search.peersLine": "Сиды: {seeders} • Личи: {leechers}",
+    "search.downloadLinkLine": "{url}",
+    "search.downloadLinkLabel": "Скачать",
     "search.downloadButton": "Скачать {index}",
     "search.prevPage": "← Назад",
     "search.nextPage": "Далее →",
@@ -19,6 +21,8 @@
     "start.commandsTitle": "Команды:",
     "start.searchHint": "/search — поиск торрентов",
     "start.jobsHint": "/jobs — управление загрузками через кнопки",
+    "start.switchToEnglish": "Переключить на английский",
+    "start.switchToRussian": "Переключить на русский",
     "jobs.listEmpty": "Нет активных или завершённых заданий. Запусти /search, чтобы начать.",
     "jobs.listPrompt": "Выбери задание для просмотра деталей:",
     "jobs.listButton": "{title} — {status}",
@@ -48,7 +52,9 @@
     "downloads.startFailedAlert": "Не удалось запустить загрузку",
     "downloads.startFailed": "Не удалось запустить загрузку: {message}",
     "notifications.jobCompleted": "Задание завершено: {label}",
-    "notifications.jobRemoved": "Задание удалено: {label}"
+    "notifications.jobRemoved": "Задание удалено: {label}",
+    "locale.updated": "Язык переключен на {language}.",
+    "locale.selfName": "Русский"
   },
   "en": {
     "commands.searchDescription": "Search torrents",
@@ -62,6 +68,8 @@
     "search.expired": "Search results expired. Run /search again.",
     "search.sizeLine": "Size: {size}",
     "search.peersLine": "Seeders: {seeders} • Leechers: {leechers}",
+    "search.downloadLinkLine": "{url}",
+    "search.downloadLinkLabel": "Download",
     "search.downloadButton": "Download {index}",
     "search.prevPage": "← Previous",
     "search.nextPage": "Next →",
@@ -70,6 +78,8 @@
     "start.commandsTitle": "Commands:",
     "start.searchHint": "/search — search torrents",
     "start.jobsHint": "/jobs — manage downloads via buttons",
+    "start.switchToEnglish": "Switch to English",
+    "start.switchToRussian": "Switch to Russian",
     "jobs.listEmpty": "No active or completed jobs. Run /search to start one.",
     "jobs.listPrompt": "Select a job to view details:",
     "jobs.listButton": "{title} — {status}",
@@ -99,6 +109,8 @@
     "downloads.startFailedAlert": "Failed to start download",
     "downloads.startFailed": "Failed to start download: {message}",
     "notifications.jobCompleted": "Job completed: {label}",
-    "notifications.jobRemoved": "Job removed: {label}"
+    "notifications.jobRemoved": "Job removed: {label}",
+    "locale.updated": "Language switched to {language}.",
+    "locale.selfName": "English"
   }
 }
