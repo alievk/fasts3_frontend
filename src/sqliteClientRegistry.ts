@@ -16,6 +16,7 @@ type ClientRow = {
   transport_payload: string;
   created_at: string;
   updated_at: string;
+  locale: string | null;
 };
 
 type JobRow = {
@@ -40,7 +41,8 @@ const toClientRecord = (row: ClientRow): ClientRecord => ({
   clientId: row.client_id,
   transport: deserializeTransport(row.transport_payload),
   createdAt: row.created_at,
-  updatedAt: row.updated_at
+  updatedAt: row.updated_at,
+  locale: row.locale ?? null
 });
 
 export class SQLiteClientRegistry implements ClientRegistry {
@@ -54,6 +56,8 @@ export class SQLiteClientRegistry implements ClientRegistry {
   private upsertJobStmt: Database.Statement;
   private deleteJobStmt: Database.Statement;
   private notificationTargetsStmt: Database.Statement;
+  private getClientLocaleStmt: Database.Statement;
+  private setClientLocaleStmt: Database.Statement;
 
   constructor(private readonly dbPath: string) {
     ensureDirectory(dbPath);
@@ -63,8 +67,8 @@ export class SQLiteClientRegistry implements ClientRegistry {
     this.initSchema();
     this.upsertClientStmt = this.db.prepare(
       `
-      INSERT INTO clients (client_id, transport_type, transport_payload, created_at, updated_at)
-      VALUES (@clientId, @transportType, @payload, @createdAt, @updatedAt)
+      INSERT INTO clients (client_id, transport_type, transport_payload, locale, created_at, updated_at)
+      VALUES (@clientId, @transportType, @payload, @locale, @createdAt, @updatedAt)
       ON CONFLICT(client_id) DO UPDATE SET
         transport_type = excluded.transport_type,
         transport_payload = excluded.transport_payload,
@@ -94,6 +98,15 @@ export class SQLiteClientRegistry implements ClientRegistry {
       WHERE j.job_id = ?
     `.trim()
     );
+    this.getClientLocaleStmt = this.db.prepare('SELECT locale FROM clients WHERE client_id = ?');
+    this.setClientLocaleStmt = this.db.prepare(
+      `
+      UPDATE clients
+      SET locale = @locale,
+          updated_at = @updatedAt
+      WHERE client_id = @clientId
+    `.trim()
+    );
   }
 
   async registerClient(clientId: string, transport: ClientTransport): Promise<ClientRecord> {
@@ -102,6 +115,7 @@ export class SQLiteClientRegistry implements ClientRegistry {
       clientId,
       transportType: transport.type,
       payload: serializeTransport(transport),
+      locale: null,
       createdAt: timestamp,
       updatedAt: timestamp
     });
@@ -145,8 +159,23 @@ export class SQLiteClientRegistry implements ClientRegistry {
     const rows = this.notificationTargetsStmt.all(jobId) as ClientRow[];
     return rows.map((row) => ({
       clientId: row.client_id,
-      transport: deserializeTransport(row.transport_payload)
+      transport: deserializeTransport(row.transport_payload),
+      locale: row.locale ?? null
     }));
+  }
+
+  async getClientLocale(clientId: string): Promise<string | null> {
+    const row = this.getClientLocaleStmt.get(clientId) as { locale: string | null } | undefined;
+    return row?.locale ?? null;
+  }
+
+  async setClientLocale(clientId: string, locale: string | null): Promise<void> {
+    const timestamp = new Date().toISOString();
+    this.setClientLocaleStmt.run({
+      clientId,
+      locale,
+      updatedAt: timestamp
+    });
   }
 
   private initSchema(): void {
@@ -156,6 +185,7 @@ export class SQLiteClientRegistry implements ClientRegistry {
         client_id TEXT PRIMARY KEY,
         transport_type TEXT NOT NULL,
         transport_payload TEXT NOT NULL,
+        locale TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );

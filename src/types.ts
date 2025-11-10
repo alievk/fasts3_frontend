@@ -113,6 +113,7 @@ export interface ClientRecord {
   transport: ClientTransport;
   createdAt: string;
   updatedAt: string;
+  locale?: string | null;
 }
 
 export interface OwnedJob extends StoredJob {
@@ -122,6 +123,7 @@ export interface OwnedJob extends StoredJob {
 export interface ClientNotificationTarget {
   clientId: string;
   transport: ClientTransport;
+  locale?: string | null;
 }
 
 export interface ClientRegistry {
@@ -133,4 +135,6 @@ export interface ClientRegistry {
   updateJob(job: OwnedJob): Promise<void>;
   deleteJob(jobId: string): Promise<void>;
   getNotificationTargets(jobId: string): Promise<ClientNotificationTarget[]>;
+  getClientLocale(clientId: string): Promise<string | null>;
+  setClientLocale(clientId: string, locale: string | null): Promise<void>;
 }

@@ -28,7 +28,12 @@ const baseJob = (): StoredJob => ({
 
 const runCommonAssertions = async (registry: MemoryClientRegistry | SQLiteClientRegistry) => {
   const clientId = 'client-1';
-  await registry.registerClient(clientId, { type: 'cli', profile: 'test' });
+  const firstRecord = await registry.registerClient(clientId, { type: 'cli', profile: 'test' });
+  assert.equal(firstRecord.locale ?? null, null);
+  await registry.setClientLocale(clientId, 'en');
+  assert.equal(await registry.getClientLocale(clientId), 'en');
+  const secondRecord = await registry.registerClient(clientId, { type: 'cli', profile: 'test' });
+  assert.equal(secondRecord.locale, 'en');
   await registry.bindJobToClient(baseJob(), clientId);
   const jobs = await registry.listJobs(clientId);
   assert.equal(jobs.length, 1);

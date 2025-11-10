@@ -14,7 +14,8 @@ export class MemoryClientRegistry implements ClientRegistry {
       clientId,
       transport,
       createdAt: existing?.createdAt ?? now(),
-      updatedAt: now()
+      updatedAt: now(),
+      locale: existing?.locale ?? null
     };
     this.clients.set(clientId, record);
     return record;
@@ -57,6 +58,18 @@ export class MemoryClientRegistry implements ClientRegistry {
     if (!client) {
       return [];
     }
-    return [{ clientId: client.clientId, transport: client.transport }];
+    return [{ clientId: client.clientId, transport: client.transport, locale: client.locale ?? null }];
+  }
+
+  async getClientLocale(clientId: string): Promise<string | null> {
+    return this.clients.get(clientId)?.locale ?? null;
+  }
+
+  async setClientLocale(clientId: string, locale: string | null): Promise<void> {
+    const existing = this.clients.get(clientId);
+    if (!existing) {
+      return;
+    }
+    this.clients.set(clientId, { ...existing, locale, updatedAt: now() });
   }
 }
