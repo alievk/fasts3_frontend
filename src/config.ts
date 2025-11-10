@@ -62,6 +62,7 @@ export const loadConfig = (): Config => {
   if (!playerBaseUrl) {
     throw new Error('PLAYER_BASE_URL is required');
   }
+  const botLocale = process.env.TORRENT_TELEGRAM_BOT_LOCALE?.toLowerCase();
 
   return {
     apiBaseUrl: process.env.TORRENT_API_URL ?? DEFAULT_API_BASE_URL,
@@ -73,6 +74,7 @@ export const loadConfig = (): Config => {
     searchMinSizeBytes,
     searchMaxSizeBytes,
     playerBaseUrl,
-    clientDbPath: resolveClientDbPath()
+    clientDbPath: resolveClientDbPath(),
+    botLocale
   };
 };

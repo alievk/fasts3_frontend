@@ -91,6 +91,7 @@ export interface Config {
   searchMaxSizeBytes?: number;
   playerBaseUrl: string;
   clientDbPath: string;
+  botLocale?: string;
 }
 
 export interface ApiClient {

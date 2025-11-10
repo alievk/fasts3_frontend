@@ -4,9 +4,10 @@ import { loadConfig } from './config.js';
 import { createApiClient } from './apiClient.js';
 import { DownloadService } from './downloadService.js';
 import { Poller } from './poller.js';
-import { OwnedJob, SearchResult } from './types.js';
+import { JobStatus, OwnedJob, SearchResult } from './types.js';
 import { createSearchPipeline } from './searchPipeline.js';
 import { createClientRegistry } from './clientRegistry.js';
+import botTranslationsData from './locales/bot.json' assert { type: 'json' };
 
 const botToken = process.env.TORRENT_TELEGRAM_BOT_TOKEN;
 
@@ -16,6 +17,27 @@ if (!botToken) {
 }
 
 const config = loadConfig();
+const botTranslations = botTranslationsData as Record<string, Record<string, string>>;
+type TranslationParams = Record<string, string | number>;
+const DEFAULT_LOCALE = 'ru';
+const FALLBACK_LOCALE = 'en';
+const isSupportedLocale = (locale?: string): locale is string =>
+  Boolean(locale && Object.prototype.hasOwnProperty.call(botTranslations, locale));
+const activeLocale = isSupportedLocale(config.botLocale) ? config.botLocale : DEFAULT_LOCALE;
+const resolveTemplate = (locale: string, key: string): string | undefined => botTranslations[locale]?.[key];
+const formatTemplate = (template: string, params?: TranslationParams): string =>
+  template.replace(/\{([^}]+)\}/g, (_match, token: string) => {
+    const value = params?.[token.trim()];
+    return value === undefined ? '' : String(value);
+  });
+const t = (key: string, params?: TranslationParams): string => {
+  const template =
+    resolveTemplate(activeLocale, key) ??
+    resolveTemplate(DEFAULT_LOCALE, key) ??
+    resolveTemplate(FALLBACK_LOCALE, key) ??
+    key;
+  return formatTemplate(template, params);
+};
 const apiClient = createApiClient();
 const clientRegistry = createClientRegistry(config.clientDbPath);
 const searchPipeline = createSearchPipeline(config);
@@ -24,8 +46,8 @@ const poller = new Poller(downloadService, config.pollingIntervalMs);
 const bot = new Telegraf(botToken);
 
 const botCommands = [
-  { command: 'search', description: 'Search torrents' },
-  { command: 'jobs', description: 'Manage downloads' }
+  { command: 'search', description: t('commands.searchDescription') },
+  { command: 'jobs', description: t('commands.jobsDescription') }
 ];
 
 const activeChats = new Set<number>();
@@ -91,7 +113,7 @@ const ensureBootstrapped = (): Promise<void> => {
         await downloadService.checkHealth();
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        await broadcast(`Backend health check failed: ${message}`);
+        await broadcast(t('health.checkFailed', { message }));
       }
       await downloadService.syncAll();
       poller.start();
@@ -187,9 +209,11 @@ const safeEditMessageText = async (
   }
 };
 
+const formatStatus = (status: JobStatus): string => t(`status.${status}`);
+
 const formatSize = (size: number | null | undefined): string => {
   if (typeof size !== 'number' || Number.isNaN(size)) {
-    return 'unknown';
+    return t('common.unknown');
   }
   const gigabytes = size / (1024 * 1024 * 1024);
   if (size < 100 * 1024 * 1024) {
@@ -202,11 +226,11 @@ const formatSize = (size: number | null | undefined): string => {
 const formatDateTime = (primary: string | Date | null | undefined, fallback?: Date): string => {
   const value = primary ?? fallback ?? null;
   if (!value) {
-    return 'unknown';
+    return t('common.unknown');
   }
   const date = typeof value === 'string' ? new Date(value) : value;
   if (Number.isNaN(date.getTime())) {
-    return 'unknown';
+    return t('common.unknown');
   }
   return new Intl.DateTimeFormat(undefined, {
     dateStyle: 'medium',
@@ -223,28 +247,28 @@ const formatJobInfoLines = (job: OwnedJob): string[] => {
   const downloadLink = job.shortUrl ?? job.s3Url ?? null;
   const expiresAt = job.s3UrlExpiresAt ? formatDateTime(job.s3UrlExpiresAt) : undefined;
   const playerLink = job.lastKnownStatus === 'completed' ? buildPlayerUrl(job.jobId) : undefined;
+  const progressText =
+    job.lastKnownStatus === 'completed'
+      ? '100%'
+      : job.progress === null
+        ? '—'
+        : `${Math.round(job.progress * 100)}%`;
   const lines = [
-    `Job ID: ${job.jobId}`,
-    `BTIH: ${job.btih}`,
-    `Status: ${job.lastKnownStatus}`,
-    `Progress: ${
-      job.lastKnownStatus === 'completed'
-        ? '100%'
-        : job.progress === null
-          ? '—'
-          : `${Math.round(job.progress * 100)}%`
-    }`,
-    `Size: ${formatSize(job.sizeBytes ?? null)}`,
-    downloadLink ? `Download: ${downloadLink}` : undefined,
-    expiresAt ? `Link expires: ${expiresAt}` : undefined,
-    playerLink ? `Player: ${playerLink}` : undefined,
-    job.error ? `Error: ${job.error}` : undefined
+    t('job.jobIdLine', { jobId: job.jobId }),
+    t('job.btihLine', { btih: job.btih }),
+    t('job.statusLine', { status: formatStatus(job.lastKnownStatus) }),
+    t('job.progressLine', { progress: progressText }),
+    t('job.sizeLine', { size: formatSize(job.sizeBytes ?? null) }),
+    downloadLink ? t('job.downloadLine', { url: downloadLink }) : undefined,
+    expiresAt ? t('job.expiresLine', { date: expiresAt }) : undefined,
+    playerLink ? t('job.playerLine', { url: playerLink }) : undefined,
+    job.error ? t('job.errorLine', { message: job.error }) : undefined
   ];
   return lines.filter((line): line is string => Boolean(line));
 };
 
 const formatJobDetail = (job: OwnedJob): string => {
-  return [`Title: ${job.label ?? job.btih}`, ...formatJobInfoLines(job)].join('\n');
+  return [t('job.titleLine', { title: job.label ?? job.btih }), ...formatJobInfoLines(job)].join('\n');
 };
 
 const normalizeTitle = (title: string): string => {
@@ -260,24 +284,24 @@ const buildSearchPage = (results: SearchResult[], requestedPage: number) => {
     const index = startIndex + offset;
     return [
       `${index + 1}. ${normalizeTitle(result.title)}`,
-      `Size: ${formatSize(result.sizeBytes)}`,
-      `Seeders: ${result.seeders} • Leechers: ${result.leechers}`
+      t('search.sizeLine', { size: formatSize(result.sizeBytes) }),
+      t('search.peersLine', { seeders: result.seeders, leechers: result.leechers })
     ].join('\n');
   });
   const rows: ReturnType<typeof Markup.button.callback>[][] = pageResults.map((_result, offset) => [
-    Markup.button.callback(`Download ${startIndex + offset + 1}`, `start:${startIndex + offset}`)
+    Markup.button.callback(t('search.downloadButton', { index: startIndex + offset + 1 }), `start:${startIndex + offset}`)
   ]);
   const navButtons: ReturnType<typeof Markup.button.callback>[] = [];
   if (page > 0) {
-    navButtons.push(Markup.button.callback('← Previous', `page:${page - 1}`));
+    navButtons.push(Markup.button.callback(t('search.prevPage'), `page:${page - 1}`));
   }
   if (page < totalPages - 1) {
-    navButtons.push(Markup.button.callback('Next →', `page:${page + 1}`));
+    navButtons.push(Markup.button.callback(t('search.nextPage'), `page:${page + 1}`));
   }
   if (navButtons.length > 0) {
     rows.push(navButtons);
   }
-  const text = `${lines.join('\n\n')}\n\nPage ${page + 1}/${totalPages}`;
+  const text = `${lines.join('\n\n')}\n\n${t('search.pageCounter', { current: page + 1, total: totalPages })}`;
   return {
     page,
     totalPages,
@@ -290,9 +314,9 @@ const buildJobActionsKeyboard = (job: OwnedJob) => {
   const encodedId = encodeURIComponent(job.jobId);
   const downloadLink = job.shortUrl ?? job.s3Url ?? null;
   const buttons = [
-    downloadLink ? Markup.button.url('Open link', downloadLink) : undefined,
-    Markup.button.callback('Refresh', `refresh:${encodedId}`),
-    Markup.button.callback('Delete', `delete:${encodedId}`)
+    downloadLink ? Markup.button.url(t('jobs.actions.openLink'), downloadLink) : undefined,
+    Markup.button.callback(t('jobs.actions.refresh'), `refresh:${encodedId}`),
+    Markup.button.callback(t('jobs.actions.delete'), `delete:${encodedId}`)
   ].filter(Boolean) as Parameters<typeof Markup.inlineKeyboard>[0];
   return Markup.inlineKeyboard(buttons, { columns: 1 });
 };
@@ -300,7 +324,10 @@ const buildJobActionsKeyboard = (job: OwnedJob) => {
 const buildJobsKeyboard = (jobs: OwnedJob[]) => {
   const buttons = jobs.map((job) =>
     Markup.button.callback(
-      `${normalizeTitle(job.label ?? job.btih)} — ${job.lastKnownStatus}`,
+      t('jobs.listButton', {
+        title: normalizeTitle(job.label ?? job.btih),
+        status: formatStatus(job.lastKnownStatus)
+      }),
       `job:${encodeURIComponent(job.jobId)}`
     )
   );
@@ -310,10 +337,10 @@ const buildJobsKeyboard = (jobs: OwnedJob[]) => {
 const sendJobList = async (chatId: number, clientId: string) => {
   const jobs = downloadService.getJobsForClient(clientId);
   if (jobs.length === 0) {
-    await sendTelegramMessage(chatId, 'No active or completed jobs. Run /search to start one.');
+    await sendTelegramMessage(chatId, t('jobs.listEmpty'));
     return;
   }
-  await sendTelegramMessage(chatId, 'Select a job to view details:', buildJobsKeyboard(jobs));
+  await sendTelegramMessage(chatId, t('jobs.listPrompt'), buildJobsKeyboard(jobs));
 };
 
 bot.use(async (ctx, next) => {
@@ -328,10 +355,10 @@ bot.use(async (ctx, next) => {
 bot.start(async (ctx) => {
   await ctx.reply(
     [
-      'Welcome to Torrent Bot.',
-      'Commands:',
-      '/search — search torrents',
-      '/jobs — manage downloads via buttons'
+      t('start.welcome'),
+      t('start.commandsTitle'),
+      t('start.searchHint'),
+      t('start.jobsHint')
     ].join('\n')
   );
 });
@@ -342,28 +369,39 @@ bot.command('search', async (ctx) => {
     return;
   }
   setConversationState(chatId, { type: 'search', stage: 'awaitingQuery' });
-  await ctx.reply('Отправь мне название фильма.');
+  await ctx.reply(t('search.prompt'));
 });
 
-bot.on('text', async (ctx) => {
+bot.on('message', async (ctx, next) => {
   const chatId = ctx.chat?.id;
   if (!chatId) {
-    return;
+    return next();
+  }
+  const message = ctx.message;
+  const textMessage = message as { text?: string; entities?: { type: string; offset: number }[] } | undefined;
+  if (!textMessage || typeof textMessage.text !== 'string') {
+    return next();
+  }
+  const text = textMessage.text;
+  const isCommand =
+    textMessage.entities?.some((entity) => entity.type === 'bot_command' && entity.offset === 0) ?? text.startsWith('/');
+  if (isCommand) {
+    return next();
   }
   const state = getConversationState(chatId);
   if (!state || state.type !== 'search' || state.stage !== 'awaitingQuery') {
-    return;
+    return next();
   }
-  const query = ctx.message?.text?.trim();
+  const query = text.trim();
   if (!query) {
-    await ctx.reply('Отправь мне название фильма.');
+    await ctx.reply(t('search.prompt'));
     return;
   }
   clearConversationState(chatId, 'search');
   try {
     const results = await downloadService.search(query);
     if (results.length === 0) {
-      await ctx.reply(`Ничего не найдено для "${query}"`);
+      await ctx.reply(t('search.noResults', { query }));
       return;
     }
     const pageInfo = buildSearchPage(results, 0);
@@ -371,7 +409,7 @@ bot.on('text', async (ctx) => {
     await ctx.reply(pageInfo.text, pageInfo.keyboard);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    await ctx.reply(`Search failed: ${message}`);
+    await ctx.reply(t('search.failed', { message }));
   }
 });
 
@@ -396,26 +434,27 @@ bot.action(/^start:(\d+)$/, async (ctx) => {
   const session = searchSessions.get(chatId);
   const results = session?.results;
   if (!results || Number.isNaN(index) || index < 0 || index >= results.length) {
-    await safeAnswerCallback(ctx, 'Search results expired. Run /search again.');
+    await safeAnswerCallback(ctx, t('search.expired'));
     return;
   }
   const result = results[index];
   try {
     const job = await downloadService.startDownload(result, clientId);
-    await safeAnswerCallback(ctx, 'Download started.');
+    await safeAnswerCallback(ctx, t('downloads.started'));
     await ctx.editMessageReplyMarkup(undefined);
     await ctx.reply(
       [
-        `Started ${result.title}`,
-        `Job ID: ${job.jobId}`,
-        `BTIH: ${job.btih}`,
-        `\nCheck status: /jobs`
+        t('downloads.summaryTitle', { title: result.title }),
+        t('job.jobIdLine', { jobId: job.jobId }),
+        t('job.btihLine', { btih: job.btih }),
+        '',
+        t('downloads.checkStatusHint')
       ].join('\n')
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    await safeAnswerCallback(ctx, 'Failed to start download', { show_alert: true });
-    await ctx.reply(`Failed to start download: ${message}`);
+    await safeAnswerCallback(ctx, t('downloads.startFailedAlert'), { show_alert: true });
+    await ctx.reply(t('downloads.startFailed', { message }));
   }
 });
 
@@ -430,7 +469,7 @@ bot.action(/^page:(\d+)$/, async (ctx) => {
   }
   const session = searchSessions.get(chatId);
   if (!session) {
-    await safeAnswerCallback(ctx, 'Search results expired. Run /search again.');
+    await safeAnswerCallback(ctx, t('search.expired'));
     return;
   }
   const pageInfo = buildSearchPage(session.results, requestedPage);
@@ -452,7 +491,7 @@ bot.action(/^job:(.+)$/, async (ctx) => {
   const clientId = await ensureTelegramClient(chatId);
   const job = findOwnedJob(jobId, clientId);
   if (!job) {
-    await ctx.reply(`Job ${jobId} not found.`);
+    await ctx.reply(t('jobs.notFound', { jobId }));
     return;
   }
   await ctx.reply(formatJobDetail(job), buildJobActionsKeyboard(job));
@@ -472,7 +511,7 @@ bot.action(/^refresh:(.+)$/, async (ctx) => {
   const clientId = await ensureTelegramClient(chatId);
   const job = findOwnedJob(jobId, clientId);
   if (!job) {
-    await safeEditMessageText(ctx, `Job ${jobId} not found.`);
+    await safeEditMessageText(ctx, t('jobs.notFound', { jobId }));
     return;
   }
   await safeEditMessageText(ctx, formatJobDetail(job), buildJobActionsKeyboard(job));
@@ -491,13 +530,13 @@ bot.action(/^delete:(.+)$/, async (ctx) => {
   const clientId = await ensureTelegramClient(chatId);
   const existing = findOwnedJob(jobId, clientId);
   if (!existing) {
-    await safeEditMessageText(ctx, `Job ${jobId} not found.`);
+    await safeEditMessageText(ctx, t('jobs.notFound', { jobId }));
     return;
   }
   removalSuppressions.set(jobId, clientId);
   await downloadService.remove(jobId);
   try {
-    await safeEditMessageText(ctx, `Job removed: ${existing.label ?? jobId}`);
+    await safeEditMessageText(ctx, t('jobs.removed', { label: existing.label ?? jobId }));
   } catch (error) {
     console.error('Failed to edit job message after deletion:', error);
   }
@@ -521,7 +560,10 @@ downloadService.on('jobUpdated', (job) => {
   if (!statusChanged && !linkReady) {
     return;
   }
-  void notifyJobOwner(job, [`Job completed: ${job.label ?? job.btih}`, ...formatJobInfoLines(job)].join('\n'));
+  void notifyJobOwner(
+    job,
+    [t('notifications.jobCompleted', { label: job.label ?? job.btih }), ...formatJobInfoLines(job)].join('\n')
+  );
 });
 
 downloadService.on('jobRemoved', (job) => {
@@ -531,11 +573,11 @@ downloadService.on('jobRemoved', (job) => {
   if (suppressedClientId && suppressedClientId === job.clientId) {
     return;
   }
-  void notifyJobOwner(job, `Job removed: ${job.label ?? job.jobId}`);
+  void notifyJobOwner(job, t('notifications.jobRemoved', { label: job.label ?? job.jobId }));
 });
 
 downloadService.on('error', (error) => {
-  void broadcast(`Service error: ${error.message}`);
+  void broadcast(t('service.error', { message: error.message }));
 });
 
 const startBot = async () => {
