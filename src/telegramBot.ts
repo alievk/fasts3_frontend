@@ -372,6 +372,9 @@ const buildSearchPage = (results: SearchResult[], requestedPage: number, locale:
     ].join('\n');
   });
   const navButtons: ReturnType<typeof Markup.button.callback>[] = [];
+  if (page > 0) {
+    navButtons.push(Markup.button.callback(translate('search.prevPage', locale), `page:${page - 1}`));
+  }
   if (page < totalPages - 1) {
     navButtons.push(Markup.button.callback(translate('search.nextPage', locale), `page:${page + 1}`));
   }
