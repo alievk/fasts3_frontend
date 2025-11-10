@@ -107,13 +107,76 @@ const botCommands = [
 
 const activeChats = new Set<number>();
 
+type SearchResultWithToken = SearchResult & { token: string };
 type SearchSession = {
-  results: SearchResult[];
+  results: SearchResultWithToken[];
   page: number;
+  messageId?: number;
 };
 
 const searchPageSize = config.searchPageSize;
 const DOWNLOAD_PAYLOAD_PREFIX = 'download_';
+const MAX_RESULT_TOKENS = 500;
+
+type ResultTokenRecord = {
+  chatId: number;
+  result: SearchResult;
+};
+
+const resultTokenStore = new Map<string, ResultTokenRecord>();
+const resultTokenOrder: string[] = [];
+
+const extractBtih = (magnet: string): string | null => {
+  const match = magnet.match(/btih:([a-z0-9]+)/i);
+  return match?.[1]?.toLowerCase() ?? null;
+};
+
+const resolveResultTokenValue = (result: SearchResult): string => {
+  const fallback = (result.id ?? '').toLowerCase();
+  const source = extractBtih(result.magnet) ?? fallback;
+  const normalized = source.toLowerCase();
+  return normalized.slice(-6) || normalized || fallback || 'unknown';
+};
+
+const buildResultTokenKey = (chatId: number, token: string): string => `${chatId}:${token}`;
+
+const removeResultTokenKey = (key: string): void => {
+  const index = resultTokenOrder.indexOf(key);
+  if (index >= 0) {
+    resultTokenOrder.splice(index, 1);
+  }
+};
+
+const pruneResultTokens = (): void => {
+  while (resultTokenOrder.length > MAX_RESULT_TOKENS) {
+    const oldest = resultTokenOrder.shift();
+    if (!oldest) {
+      break;
+    }
+    resultTokenStore.delete(oldest);
+  }
+};
+
+const storeResultToken = (chatId: number, result: SearchResult): string => {
+  const token = resolveResultTokenValue(result);
+  const key = buildResultTokenKey(chatId, token);
+  removeResultTokenKey(key);
+  resultTokenStore.set(key, { chatId, result });
+  resultTokenOrder.push(key);
+  pruneResultTokens();
+  return token;
+};
+
+const attachResultTokens = (chatId: number, results: SearchResult[]): SearchResultWithToken[] =>
+  results.map((result) => ({ ...result, token: storeResultToken(chatId, result) }));
+
+const resolveResultToken = (chatId: number, token: string): SearchResult | null => {
+  const record = resultTokenStore.get(buildResultTokenKey(chatId, token));
+  if (!record || record.chatId !== chatId) {
+    return null;
+  }
+  return record.result;
+};
 
 type ConversationState =
   | {
@@ -271,6 +334,31 @@ const safeEditMessageText = async (
   }
 };
 
+const isDeleteMessageErrorIgnorable = (error: unknown): boolean => {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+  const description = (error as { response?: { description?: string } }).response?.description ?? '';
+  if (!description) {
+    return false;
+  }
+  return (
+    description.includes('message to delete not found') ||
+    description.includes("message can't be deleted") ||
+    description.includes('message identifier is not valid')
+  );
+};
+
+const deleteSearchMessage = async (chatId: number, messageId: number): Promise<void> => {
+  try {
+    await bot.telegram.deleteMessage(chatId, messageId);
+  } catch (error) {
+    if (!isDeleteMessageErrorIgnorable(error)) {
+      console.error(`Failed to delete search message ${messageId} for chat ${chatId}:`, error);
+    }
+  }
+};
+
 const formatStatus = (status: JobStatus, locale: string): string => translate(`status.${status}`, locale);
 
 const formatSize = (size: number | null | undefined, locale: string): string => {
@@ -339,24 +427,21 @@ const buildStartLink = (payload: string): string => {
   const username = getBotUsername();
   return `https://t.me/${username}?start=${encodeURIComponent(payload)}`;
 };
-const formatDownloadLinkLine = (displayIndex: number, locale: string): string => {
-  const payload = `${DOWNLOAD_PAYLOAD_PREFIX}${displayIndex}`;
+const formatDownloadLinkLine = (token: string, locale: string): string => {
+  const payload = `${DOWNLOAD_PAYLOAD_PREFIX}${token}`;
   const label = translate('search.downloadLinkLabel', locale);
   const link = `<a href="${buildStartLink(payload)}">${escapeHtml(label)}</a>`;
   return translate('search.downloadLinkLine', locale, { url: link });
 };
-const parseDownloadPayload = (payload?: string | null): number | null => {
+const parseDownloadPayload = (payload?: string | null): string | null => {
   if (!payload || !payload.startsWith(DOWNLOAD_PAYLOAD_PREFIX)) {
     return null;
   }
-  const parsed = Number.parseInt(payload.slice(DOWNLOAD_PAYLOAD_PREFIX.length), 10);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    return null;
-  }
-  return parsed - 1;
+  const token = payload.slice(DOWNLOAD_PAYLOAD_PREFIX.length).trim();
+  return token || null;
 };
 
-const buildSearchPage = (results: SearchResult[], requestedPage: number, locale: string) => {
+const buildSearchPage = (results: SearchResultWithToken[], requestedPage: number, locale: string) => {
   const totalPages = Math.max(1, Math.ceil(results.length / searchPageSize));
   const page = Math.min(Math.max(requestedPage, 0), totalPages - 1);
   const startIndex = page * searchPageSize;
@@ -368,7 +453,7 @@ const buildSearchPage = (results: SearchResult[], requestedPage: number, locale:
       `${displayIndex}. ${escapeHtml(normalizeTitle(result.title))}`,
       escapeHtml(translate('search.sizeLine', locale, { size: formatSize(result.sizeBytes, locale) })),
       escapeHtml(translate('search.peersLine', locale, { seeders: result.seeders, leechers: result.leechers })),
-      formatDownloadLinkLine(displayIndex, locale)
+      formatDownloadLinkLine(result.token, locale)
     ].join('\n');
   });
   const navButtons: ReturnType<typeof Markup.button.callback>[] = [];
@@ -390,20 +475,18 @@ const buildSearchPage = (results: SearchResult[], requestedPage: number, locale:
   };
 };
 
-const startDownloadFromSession = async (
+const startDownloadFromToken = async (
   chatId: number,
-  index: number,
+  token: string,
   replyFn: (text: string) => Promise<unknown>
 ): Promise<void> => {
   const locale = getChatLocale(chatId);
-  const clientId = await ensureTelegramClient(chatId);
-  const session = searchSessions.get(chatId);
-  const results = session?.results;
-  if (!results || Number.isNaN(index) || index < 0 || index >= results.length) {
+  const result = token ? resolveResultToken(chatId, token) : null;
+  if (!result) {
     await replyFn(translate('search.expired', locale));
     return;
   }
-  const result = results[index];
+  const clientId = await ensureTelegramClient(chatId);
   try {
     const job = await downloadService.startDownload(result, clientId);
     await replyFn(
@@ -469,9 +552,9 @@ bot.start(async (ctx) => {
   if (!chatId) {
     return;
   }
-  const payloadIndex = parseDownloadPayload(ctx.startPayload);
-  if (payloadIndex !== null) {
-    await startDownloadFromSession(chatId, payloadIndex, (text) => ctx.reply(text));
+  const payloadToken = parseDownloadPayload(ctx.startPayload);
+  if (payloadToken) {
+    await startDownloadFromToken(chatId, payloadToken, (text) => ctx.reply(text));
     return;
   }
   await sendStartMessage(chatId, (text, extra) => ctx.reply(text, extra));
@@ -513,14 +596,20 @@ bot.on('message', async (ctx, next) => {
   }
   clearConversationState(chatId, 'search');
   try {
-    const results = await downloadService.search(query);
-    if (results.length === 0) {
+    const rawResults = await downloadService.search(query);
+    if (rawResults.length === 0) {
       await ctx.reply(translateForChat(chatId, 'search.noResults', { query }));
       return;
     }
-    const pageInfo = buildSearchPage(results, 0, getChatLocale(chatId));
-    searchSessions.set(chatId, { results, page: pageInfo.page });
-    await ctx.reply(pageInfo.text, pageInfo.extra);
+    const results = attachResultTokens(chatId, rawResults);
+    const locale = getChatLocale(chatId);
+    const pageInfo = buildSearchPage(results, 0, locale);
+    const previousMessageId = searchSessions.get(chatId)?.messageId;
+    const sentMessage = await ctx.reply(pageInfo.text, pageInfo.extra);
+    searchSessions.set(chatId, { results, page: pageInfo.page, messageId: sentMessage.message_id });
+    if (previousMessageId !== undefined) {
+      await deleteSearchMessage(chatId, previousMessageId);
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     await ctx.reply(translateForChat(chatId, 'search.failed', { message }));
@@ -546,7 +635,8 @@ bot.action(/^page:(\d+)$/, async (ctx) => {
     return;
   }
   const session = searchSessions.get(chatId);
-  if (!session) {
+  const messageId = ctx.callbackQuery?.message?.message_id;
+  if (!session || !messageId || session.messageId !== messageId) {
     await safeAnswerCallback(ctx, translateForChat(chatId, 'search.expired'));
     return;
   }
