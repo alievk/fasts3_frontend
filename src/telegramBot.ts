@@ -23,6 +23,11 @@ const downloadService = new DownloadService(apiClient, clientRegistry, config.se
 const poller = new Poller(downloadService, config.pollingIntervalMs);
 const bot = new Telegraf(botToken);
 
+const botCommands = [
+  { command: 'search', description: 'Search torrents' },
+  { command: 'jobs', description: 'Manage downloads' }
+];
+
 const activeChats = new Set<number>();
 
 type SearchSession = {
@@ -501,6 +506,7 @@ downloadService.on('error', (error) => {
 
 const startBot = async () => {
   await ensureBootstrapped();
+  await bot.telegram.setMyCommands(botCommands);
   await bot.launch();
   console.log('Telegram bot started.');
 };
