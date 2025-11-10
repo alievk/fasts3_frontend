@@ -37,9 +37,30 @@ type SearchSession = {
 
 const searchPageSize = config.searchPageSize;
 
+type ConversationState =
+  | {
+      type: 'search';
+      stage: 'awaitingQuery';
+    };
+
 const searchSessions = new Map<number, SearchSession>();
+const conversationStates = new Map<number, ConversationState>();
 const trackedJobs = new Map<string, OwnedJob>();
 const removalSuppressions = new Map<string, string>();
+const setConversationState = (chatId: number, state: ConversationState) => {
+  conversationStates.set(chatId, state);
+};
+const clearConversationState = (chatId: number, type?: ConversationState['type']) => {
+  const existing = conversationStates.get(chatId);
+  if (!existing) {
+    return;
+  }
+  if (type && existing.type !== type) {
+    return;
+  }
+  conversationStates.delete(chatId);
+};
+const getConversationState = (chatId: number): ConversationState | undefined => conversationStates.get(chatId);
 
 const buildTelegramClientId = (chatId: number): string => `telegram:${chatId}`;
 
@@ -309,27 +330,40 @@ bot.start(async (ctx) => {
     [
       'Welcome to Torrent Bot.',
       'Commands:',
-      '/search <query> — search torrents',
+      '/search — search torrents',
       '/jobs — manage downloads via buttons'
     ].join('\n')
   );
 });
 
 bot.command('search', async (ctx) => {
-  const text = ctx.message?.text ?? '';
-  const query = text.replace(/^\/search(@\w+)?\s*/i, '').trim();
-  if (!query) {
-    await ctx.reply('Usage: /search <query>');
-    return;
-  }
   const chatId = ctx.chat?.id;
   if (!chatId) {
     return;
   }
+  setConversationState(chatId, { type: 'search', stage: 'awaitingQuery' });
+  await ctx.reply('Отправь мне название фильма.');
+});
+
+bot.on('text', async (ctx) => {
+  const chatId = ctx.chat?.id;
+  if (!chatId) {
+    return;
+  }
+  const state = getConversationState(chatId);
+  if (!state || state.type !== 'search' || state.stage !== 'awaitingQuery') {
+    return;
+  }
+  const query = ctx.message?.text?.trim();
+  if (!query) {
+    await ctx.reply('Отправь мне название фильма.');
+    return;
+  }
+  clearConversationState(chatId, 'search');
   try {
     const results = await downloadService.search(query);
     if (results.length === 0) {
-      await ctx.reply(`No results for "${query}"`);
+      await ctx.reply(`Ничего не найдено для "${query}"`);
       return;
     }
     const pageInfo = buildSearchPage(results, 0);
