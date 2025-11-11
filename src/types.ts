@@ -23,6 +23,7 @@ export interface JobDetail {
   label?: string | null;
   error?: string | null;
   shortUrl?: string | null;
+  s3ObjectKey?: string | null;
 }
 
 export interface HealthResponse {
@@ -42,6 +43,7 @@ export interface StoredJob {
   shortUrl?: string | null;
   error?: string | null;
   sizeBytes?: number | null;
+  s3ObjectKey?: string | null;
 }
 
 export interface CreateJobResponse {
@@ -53,6 +55,7 @@ export interface CreateJobResponse {
   progress: number | null;
   error: string | null;
   shortUrl: string | null;
+  s3ObjectKey: string | null;
 }
 
 export interface Config {

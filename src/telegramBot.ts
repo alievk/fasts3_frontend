@@ -383,9 +383,21 @@ const buildPlayerUrl = (jobId: string): string => {
   return `${normalizedBase}/public/player/?job_id=${encodeURIComponent(jobId)}`;
 };
 
+const canStreamJob = (job: OwnedJob): boolean => {
+  if (job.lastKnownStatus !== 'completed') {
+    return false;
+  }
+  const key = job.s3ObjectKey;
+  if (!key) {
+    return false;
+  }
+  const filename = key.split('/').pop() ?? key;
+  return filename.toLowerCase().endsWith('.mp4');
+};
+
 const formatJobInfoLines = (job: OwnedJob, locale: string): string[] => {
   const downloadLink = normalizeShortUrl(job.shortUrl ?? null);
-  const playerLink = job.lastKnownStatus === 'completed' ? buildPlayerUrl(job.jobId) : undefined;
+  const playerLink = canStreamJob(job) ? buildPlayerUrl(job.jobId) : undefined;
   const progressText =
     job.lastKnownStatus === 'completed'
       ? '100%'

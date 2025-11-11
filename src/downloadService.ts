@@ -28,7 +28,8 @@ const mapDetailToStored = (detail: JobDetail, existing?: StoredJob): StoredJob =
   progress: detail.progress ?? existing?.progress ?? null,
   shortUrl: detail.shortUrl ?? existing?.shortUrl ?? null,
   error: detail.error ?? null,
-  sizeBytes: detail.sizeBytes ?? existing?.sizeBytes ?? null
+  sizeBytes: detail.sizeBytes ?? existing?.sizeBytes ?? null,
+  s3ObjectKey: detail.s3ObjectKey ?? existing?.s3ObjectKey ?? null
 });
 
 const newStoredJob = (
@@ -41,7 +42,8 @@ const newStoredJob = (
   progress: number | null,
   sizeBytes: number | undefined,
   error: string | null,
-  shortUrl: string | null
+  shortUrl: string | null,
+  s3ObjectKey: string | null
 ): StoredJob => ({
   jobId,
   btih,
@@ -53,7 +55,8 @@ const newStoredJob = (
   progress: progress ?? (status === 'completed' ? 1 : 0),
   shortUrl,
   error: error ?? null,
-  sizeBytes: sizeBytes ?? null
+  sizeBytes: sizeBytes ?? null,
+  s3ObjectKey: s3ObjectKey ?? null
 });
 
 export class DownloadService extends EventEmitter {
@@ -135,7 +138,8 @@ export class DownloadService extends EventEmitter {
         response.progress,
         result.sizeBytes,
         response.error,
-        response.shortUrl
+        response.shortUrl,
+        response.s3ObjectKey
       );
       const owned = await this.clientRegistry.bindJobToClient(stored, owner);
       this.jobs.set(owned.jobId, owned);

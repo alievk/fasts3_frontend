@@ -18,7 +18,8 @@ const baseJob = (): StoredJob => ({
   statusUpdatedAt: new Date().toISOString(),
   shortUrl: null,
   error: null,
-  sizeBytes: null
+  sizeBytes: null,
+  s3ObjectKey: null
 });
 
 const runCommonAssertions = async (registry: MemoryClientRegistry | SQLiteClientRegistry) => {

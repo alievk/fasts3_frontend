@@ -20,6 +20,7 @@ interface ServerCreateJobResponse {
   progress: number | null;
   error: string | null;
   short_url?: string | null;
+  s3_object_key?: string | null;
 }
 
 interface ServerHealthResponse {
@@ -37,6 +38,7 @@ interface ServerJobDetail {
   label?: string | null;
   error?: string | null;
   short_url?: string | null;
+  s3_object_key?: string | null;
 }
 
 class HttpApiClient implements ApiClient {
@@ -83,7 +85,8 @@ class HttpApiClient implements ApiClient {
       statusUpdatedAt: payload.status_updated_at,
       progress: payload.progress ?? null,
       error: payload.error ?? null,
-      shortUrl: payload.short_url ?? null
+      shortUrl: payload.short_url ?? null,
+      s3ObjectKey: payload.s3_object_key ?? null
     };
   }
 
@@ -107,7 +110,8 @@ class HttpApiClient implements ApiClient {
       statusUpdatedAt: result.status_updated_at,
       label: result.label ?? null,
       error: result.error ?? null,
-      shortUrl: result.short_url ?? null
+      shortUrl: result.short_url ?? null,
+      s3ObjectKey: result.s3_object_key ?? null
     };
   }
 
