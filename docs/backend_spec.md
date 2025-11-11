@@ -1,72 +1,72 @@
 # Torrent Backend API Specification (v0.1)
 
-## Overview
-A minimal REST API that supports the current CLI frontend. Future frontends (web, Telegram bot) will reuse the same contract. All responses must be JSON.
+Compact reference for the orchestrator REST API. All responses are JSON unless noted.
 
-## Authentication
-- Use HTTP header `Authorization: Bearer <token>` for every request except `GET /api/jobs/{job_id}`, which stays public so browser-based clients can poll status directly without exposing tokens or adding an auth proxy.
-- Protected endpoints should respond with `401 Unauthorized` when the header is missing or invalid.
+## Auth & Base URL
+- Base path: `https://<host>/api`.
+- Send `Authorization: Bearer <token>` on every `/api` request **except** `GET /api/jobs/{job_id}` (public poll endpoint).
+- Missing/invalid tokens return `401`.
 
-## Base URL
-Assume deployments under `https://<host>/api`. Paths below use this base.
+## Endpoint Matrix
+| Method | Path | Auth | Notes |
+| --- | --- | --- | --- |
+| GET | `/api/health` | Yes | Connectivity & version. |
+| GET | `/api/search` | Yes | Torrent lookup. |
+| POST | `/api/jobs` | Yes | Create download job. |
+| GET | `/api/jobs/{job_id}` | No | Job status (single job only). |
+| GET | `/api/jobs/{job_id}/presign_link` | Yes | Returns S3 link once job completed. |
+| DELETE | `/api/jobs/{job_id}` | Yes | Cancel job + purge metadata. |
+| GET | `/redirect?job_id=...` | No | 302 redirect to the stored `s3_url` after presign. |
 
 ## Endpoints
 
-### 1. Health Check
+### Health
 `GET /api/health`
 
-**Purpose:** Allow clients to validate connectivity/UI boot.
+Response `200`:
+```json
+{"status": "ok", "version": "0.1.0"}
+```
+`version` is `Settings.app_version`.
 
-**Response 200:**
+### Search
+`GET /api/search?query=<text>&limit=<1-100>`
+
+- `query` trimmed, 1–256 chars.
+- `limit` default 5.
+- Validation errors surface as FastAPI `422` responses.
+
+Response `200`: array of `SearchItem` objects:
 ```json
 {
-  "status": "ok",
-  "version": "1.0.0"
+  "id": "rutracker-123456",
+  "title": "Ubuntu 24.04",
+  "size_bytes": 3512729600,
+  "seeders": 1520,
+  "leechers": 90,
+  "magnet": "magnet:?xt=urn:btih:..."
 }
 ```
+Empty array when nothing matches.
 
-### 2. Search Torrents
-`GET /api/search`
-
-**Query Params:**
-- `query` (string, required): search keywords.
-- `limit` (int, optional, default 5, max 100).
-
-**Response 200:**
-```json
-[
-  {
-    "id": "rutracker-123456",
-    "title": "Ubuntu Noble 24.04 Desktop",
-    "size_bytes": 3512729600,
-    "seeders": 1520,
-    "leechers": 90,
-    "magnet": "magnet:?xt=urn:btih:..."
-  }
-]
-```
-
-- Empty array when nothing matches.
-- Return `400` on invalid query (e.g., blank or >256 chars).
-
-### 3. Create Download Job
+### Create Job
 `POST /api/jobs`
 
-**Request Body:**
+Request body:
 ```json
 {
   "magnet": "magnet:?xt=urn:btih:...",
-  "label": "Ubuntu Noble 24.04 Desktop"
+  "label": "optional name"
 }
 ```
-- `magnet` (string, required). Validation ensures a proper `magnet:?` prefix and extracts the BTIH.
-- `label` (string, optional): client display name (latest value wins if reused).
+- `magnet` must start with `magnet:?`, include a BTIH, ≤4096 chars.
+- `label` optional, ≤256 chars.
 
-**Response 202:**
+Response `202`: `JobResponse`
 ```json
 {
-  "job_id": "b47ab4d3f3a841c9a0e4c6ccf0a2f89f",
-  "btih": "1f6bf62b2f6c4a72b7c84df5971e2b5b7c84df5",
+  "job_id": "4nVP9sQ1aX",
+  "btih": "1f6b…df5",
   "status": "queued",
   "status_updated_at": "2025-10-13T15:12:31.123Z",
   "progress": null,
@@ -78,102 +78,75 @@ Assume deployments under `https://<host>/api`. Paths below use this base.
   "s3_url_expires_at": null
 }
 ```
+- `status` ∈ `queued | downloading | uploading | completed | error`.
+- If the BTIH already exists in the SQLite torrent cache, the job is materialized immediately as `completed` with cached `s3_bucket`/`s3_object_key` and `progress = 1.0`.
+- `manifest` points to a manifest location (filesystem path before upload, S3 key afterwards); fetch real content via the presign flow.
+- Every call yields a new `job_id` (10-char nanoid using a URL-safe alphabet) even for duplicate BTIHs.
 
-- `status` must be one of `queued | downloading | uploading | completed | error`.
-- When a torrent with the same BTIH was previously uploaded, the response comes back immediately with `status: "completed"` and the cached `s3_bucket`/`s3_object_key` instead of queuing a duplicate download.
-- `manifest` is a location hint, not the manifest payload. When the worker stores the job locally it is the filesystem path (e.g. `/app/data/jobs/<btih>/manifest.json`). After an S3 upload it switches to the object key (e.g. `jobs/<btih>/manifest.json`). Fetch the actual manifest JSON via the presign endpoint.
-- Each POST generates a new `job_id` (UUIDv4). Multiple job IDs can point at the same BTIH when several clients request the same torrent.
+### Get Job
+`GET /api/jobs/{job_id}` – public.
 
-### 4. Get Job Status
-`GET /api/jobs/{job_id}`
+Response `200`: same `JobResponse` schema as above. Notes:
+- `progress` is `null` or a clamp in `[0,1]`.
+- `status_updated_at`, `s3_url_expires_at` are ISO 8601 timestamps with `Z`.
+- `s3_bucket`/`s3_object_key` appear after upload; `s3_url`/`s3_url_expires_at` appear after a presign request succeeds.
+- `error` contains the worker-provided reason when `status == "error"`.
 
-No authentication header required.
+Errors:
+- `404` when the job ID never existed or was deleted.
 
-**Response 200:**
-```json
-{
-  "job_id": "b47ab4d3f3a841c9a0e4c6ccf0a2f89f",
-  "btih": "1f6bf62b2f6c4a72b7c84df5971e2b5b7c84df5",
-  "status": "downloading",
-  "progress": 0.42,
-  "status_updated_at": "2025-10-13T15:24:01.591Z",
-  "manifest": null,
-  "error": null,
-  "s3_bucket": null,
-  "s3_object_key": null,
-  "s3_url": null,
-  "s3_url_expires_at": null
-}
-```
-
-Field notes:
-- `progress` in `[0,1]`, may be `null` if unknown.
-- `s3_bucket`, `s3_object_key`, and `manifest` populate once the upload finishes (cached BTIHs return them immediately).
-- The presign endpoint still returns the actual manifest/content; treat `manifest` here as a pointer only.
-- No download link is returned until `/api/jobs/{job_id}/presign_link` is called. After the presign request succeeds, subsequent status calls include `s3_url` and `s3_url_expires_at`.
-- `error` string recommended when `status == "error"`.
-- `status_updated_at` reflects the last transition time persisted in Redis.
-
-Error cases:
-- `404` when `job_id` is unknown or has been deleted (CLI will treat as orphan and remove locally).
-
-### 5. Get Job Presigned Link
+### Presign Link
 `GET /api/jobs/{job_id}/presign_link`
 
-Purpose: obtain an HTTPS presigned link for the first uploaded torrent file. Returns `404` if the job is unfinished or stored locally.
-
-**Response 200:**
+Response `200`:
 ```json
 {
-  "job_id": "b47ab4d3f3a841c9a0e4c6ccf0a2f89f",
-  "btih": "1f6bf62b2f6c4a72b7c84df5971e2b5b7c84df5",
+  "job_id": "4nVP9sQ1aX",
+  "btih": "1f6b…df5",
   "bucket": "torrent-downloads",
-  "key": "jobs/1f6bf62b2f6c4a72b7c84df5971e2b5b7c84df5/files/000_readme.txt",
-  "s3_url": "https://s3.amazonaws.com/torrent-downloads/jobs/...",
+  "key": "jobs/…/files/000_readme.txt",
+  "s3_url": "https://s3.amazonaws.com/…",
   "expires_at": "2025-10-13T15:24:01.591Z",
-  "short_url": "http://torrent.example/redirect?job_id=b47ab4d3f3a841c9a0e4c6ccf0a2f89f"
+  "short_url": "https://app.example/redirect?job_id=4nVP9sQ1aX"
 }
 ```
 
-- `expires_at` is the UTC timestamp when the link becomes invalid.
-- `short_url` redirects via the configured redirect service.
-- Return `503` with error payload when presigning is disabled or fails.
+- Only available once the job is `completed` **and** `s3_bucket` + `s3_object_key` are populated; otherwise `404`.
+- `expires_at` is an ISO timestamp computed as `_utc_now() + presigner.expires_in`.
+- `short_url` points to the `/redirect` helper route (base taken from `Settings.redirect_base_url`).
+- Missing presigner or signing failures return `503` with `{"error": "presign_unavailable", ...}`.
+- Success also writes `s3_url`/`s3_url_expires_at` back into the job record so future status polls can show them.
 
-### 6. Delete Job
+### Delete Job
 `DELETE /api/jobs/{job_id}`
 
-Purpose: cancel queued or running jobs and clean up storage.
-
-**Response 202:**
+Response `202`:
 ```json
-{
-  "deleted": true
-}
+{"deleted": true}
 ```
 
-- Cancelling is idempotent for the first call: queued jobs are removed from the worker queue immediately; active downloads are interrupted and Transmission is stopped before scratch data is removed.
-- After a successful cancellation, `GET /api/jobs/{job_id}` responds with `404` once the delete marker is set.
-- Repeating `DELETE` on the same `job_id` returns `404` to signal the job is already gone.
-- Cancelling any job ID invalidates the shared BTIH download for all clients and removes the ID from the jobs cache.
-- Return `404` when the job never existed.
+- Removes the Redis job hash, marks the queue entry as deleted, and drops the row from the SQLite index.
+- The first successful delete makes subsequent status polls return `404`.
+- Repeating `DELETE` (after the row is gone) returns `404`.
 
-## Behavioural Expectations
-- Backend should persist job history at least long enough for clients to reconnect and sync status.
-- When a download completes, upload all torrent files to S3, then expose the presign endpoint for clients that need a direct download link.
-- Downloads should transition through `queued -> downloading -> uploading -> completed` (or `error`). Progress should increase monotonically when known.
-- Searching and job management should be idempotent; repeating identical requests should not create duplicates.
+### Redirect Helper
+`GET /redirect?job_id=<id>` – unauthenticated helper used by `short_url`.
 
-## Error Format
-For non-2xx responses, return JSON in the form:
+- Looks up the job, refreshes store data, and checks that `status == "completed"`, `s3_url` is present, and `s3_url_expires_at > now`.
+- Returns `302` to the stored `s3_url` when valid; otherwise `404` with `{"error": "not_found", ...}`.
+
+## Behaviour
+- Jobs typically move `queued → downloading → uploading → completed` (or `error`). Progress rises monotonically when reported.
+- Cached BTIHs skip the queue and reuse stored S3 artifacts.
+- Presigned links are the only way to obtain `s3_url`; `redirect` simply reuses that link.
+- Searching and job management endpoints are idempotent; repeating the same call returns consistent data.
+
+## Error Payload
+Every non-2xx response conforms to:
 ```json
-{
-  "error": "short-code",
-  "message": "Human readable explanation"
-}
+{"error": "short-code", "message": "Human readable explanation"}
 ```
 
-## Rate Limiting
-- If rate limits are required, return `429` with a `Retry-After` header. Clients will surface the error and ask the user to retry later.
-
-## Timeouts
-- Keep requests responsive (<30s). For long-running job creation, return `202` immediately and track progress asynchronously.
+## Rate Limits & Timeouts
+- If rate limiting is enabled, reply with `429` + `Retry-After`.
+- Long-running work should respond quickly (≤30 s) and rely on asynchronous job polling.
