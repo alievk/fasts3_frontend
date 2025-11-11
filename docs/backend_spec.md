@@ -70,6 +70,8 @@ Response `202`: `JobResponse`
   "status": "queued",
   "status_updated_at": "2025-10-13T15:12:31.123Z",
   "progress": null,
+  "label": "Ubuntu 24.04",
+  "s3_object_key": null,
   "error": null,
   "short_url": null
 }
@@ -84,6 +86,8 @@ Response `202`: `JobResponse`
 Response `200`: same `JobResponse` schema as above. Notes:
 - `progress` is `null` or a clamp in `[0,1]`.
 - `status_updated_at` is an ISO 8601 timestamp with `Z`.
+- `label` echoes the optional value supplied at creation (`null` when omitted).
+- `s3_object_key` stays `null` until the worker uploads to S3; once populated, clients can call `/presign_link` to fetch the actual URL.
 - Use `GET /api/jobs/{job_id}/presign_link` for bucket/key/URL details once the job completes.
 - `error` contains the worker-provided reason when `status == "error"`.
 - `short_url` points to `/redirect` (base taken from `Settings.redirect_base_url`) and remains `null` until `status == "completed"`.
