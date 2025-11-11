@@ -196,14 +196,6 @@ export const PlayerApp: React.FC = () => {
       }
     };
 
-    const isExpired = (value: string | null): boolean => {
-      if (!value) {
-        return true;
-      }
-      const expires = Date.parse(value);
-      return Number.isNaN(expires) || expires <= Date.now();
-    };
-
     const fetchJobDownloadUrl = async (jobId: string, apiBase: string): Promise<string> => {
       const normalizedBase = apiBase.replace(/\/$/, '');
       const detailEndpoint = new URL(`jobs/${encodeURIComponent(jobId)}`, `${normalizedBase}/`);
@@ -226,28 +218,12 @@ export const PlayerApp: React.FC = () => {
         throw new Error(`Job ${jobId} is ${status}. Try again later.`);
       }
 
-      const s3Url = extractUrl(payload.s3_url ?? null);
-      const expiresAt = typeof payload.s3_url_expires_at === 'string' ? payload.s3_url_expires_at : null;
       const shortUrl = extractUrl(payload.short_url ?? null);
-
-      if (s3Url && (!expiresAt || !isExpired(expiresAt))) {
-        return s3Url;
-      }
-
-      if (s3Url && expiresAt && isExpired(expiresAt)) {
-        console.warn('[Player] s3_url expired at', expiresAt);
-      }
-
       if (shortUrl) {
-        console.log('[Player] falling back to short_url');
         return shortUrl;
       }
 
-      if (s3Url) {
-        throw new Error('Download link expired. Try again later.');
-      }
-
-      throw new Error('Backend did not provide a downloadable URL.');
+      throw new Error('Backend did not provide a redirect URL.');
     };
 
     let cancelled = false;
@@ -276,8 +252,8 @@ export const PlayerApp: React.FC = () => {
       if (jobIdParam) {
         try {
           const apiBase = resolveApiBase();
-          const resolved = await fetchJobDownloadUrl(jobIdParam, apiBase);
-          setReady(resolved);
+          const redirectUrl = await fetchJobDownloadUrl(jobIdParam, apiBase);
+          setReady(redirectUrl);
           return;
         } catch (error) {
           if (rawUrl.length > 0) {

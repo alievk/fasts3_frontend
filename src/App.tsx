@@ -299,6 +299,8 @@ interface JobDetailScreenProps {
 const JobDetailScreen: React.FC<JobDetailScreenProps> = ({ job, focus, onBack, onDelete }) => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [copyFeedback, setCopyFeedback] = useState<{ status: 'success' | 'error'; message: string } | undefined>();
+  const rawLink = job?.shortUrl?.trim();
+  const downloadLink = rawLink && rawLink.length > 0 ? rawLink : null;
 
   useEffect(() => {
     if (!copyFeedback) {
@@ -318,14 +320,13 @@ const JobDetailScreen: React.FC<JobDetailScreenProps> = ({ job, focus, onBack, o
       if (input.toLowerCase() !== 'c') {
         return;
       }
-      const link = job.shortUrl ?? job.s3Url;
-      if (!link) {
+      if (!downloadLink) {
         setCopyFeedback({ status: 'error', message: 'No download link available yet.' });
         return;
       }
       void (async () => {
         try {
-          await clipboard.write(link);
+          await clipboard.write(downloadLink);
           setCopyFeedback({ status: 'success', message: 'Copied download link to clipboard.' });
         } catch (error) {
           const message = error instanceof Error ? error.message : 'clipboard unavailable.';
@@ -365,8 +366,7 @@ const JobDetailScreen: React.FC<JobDetailScreenProps> = ({ job, focus, onBack, o
           ? `${(job.sizeBytes / (1024 * 1024 * 1024)).toFixed(2)} GiB`
           : 'Unknown'}
       </Text>
-      <Text>Download: {job.shortUrl ?? job.s3Url ?? '—'}</Text>
-      <Text>Link expires: {job.s3UrlExpiresAt ?? '—'}</Text>
+      <Text>Download: {downloadLink ?? '—'}</Text>
       {copyFeedback && (
         <Text color={copyFeedback.status === 'success' ? 'green' : 'red'}>
           {copyFeedback.message}
@@ -403,7 +403,7 @@ const JobDetailScreen: React.FC<JobDetailScreenProps> = ({ job, focus, onBack, o
         }}
       />
       {isDeleting && <Text color="gray">Deleting…</Text>}
-      {(job.shortUrl ?? job.s3Url) && <Text color="gray">Press C to copy the download link.</Text>}
+      {downloadLink && <Text color="gray">Press C to copy the download link.</Text>}
       <Text color="gray">Use ↑/↓ to choose, Enter to confirm.</Text>
       <Text color="gray">Use ← to go back to jobs.</Text>
     </Box>

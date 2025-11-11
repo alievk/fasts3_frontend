@@ -16,11 +16,6 @@ const baseJob = (): StoredJob => ({
   progress: 0,
   label: 'Sample job',
   statusUpdatedAt: new Date().toISOString(),
-  s3Bucket: null,
-  s3ObjectKey: null,
-  manifest: null,
-  s3Url: null,
-  s3UrlExpiresAt: null,
   shortUrl: null,
   error: null,
   sizeBytes: null

@@ -63,7 +63,8 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ jobs, onRemove, disabled
         const status = job.lastKnownStatus;
         const progress = formatProgress(job.progress, status);
         const line = `${status.padEnd(11)} ${progress.padEnd(5)} ${job.label ?? job.btih}`;
-        const link = job.shortUrl ?? job.s3Url;
+        const normalizedLink = job.shortUrl?.trim();
+        const link = normalizedLink && normalizedLink.length > 0 ? normalizedLink : null;
         return (
           <Text key={job.jobId} color={isSelected ? 'green' : undefined}>
             {isSelected ? '➤ ' : '  '}

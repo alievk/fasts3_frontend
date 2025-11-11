@@ -43,6 +43,7 @@ const resolveClientDbPath = (): string => {
 };
 
 export const loadConfig = (): Config => {
+  const apiBaseUrl = process.env.TORRENT_API_URL ?? DEFAULT_API_BASE_URL;
   const pollingEnv = process.env.TORRENT_CLI_POLL_MS;
   const pollingIntervalMs =
     pollingEnv !== undefined ? Math.max(1000, Number.parseInt(pollingEnv, 10) || DEFAULT_POLLING_MS) : DEFAULT_POLLING_MS;
@@ -65,7 +66,7 @@ export const loadConfig = (): Config => {
   const botLocale = process.env.TORRENT_TELEGRAM_BOT_LOCALE?.toLowerCase();
 
   return {
-    apiBaseUrl: process.env.TORRENT_API_URL ?? DEFAULT_API_BASE_URL,
+    apiBaseUrl,
     apiToken: process.env.TORRENT_API_TOKEN,
     pollingIntervalMs,
     searchLimit,

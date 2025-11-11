@@ -21,12 +21,7 @@ export interface JobDetail {
   sizeBytes?: number | null;
   statusUpdatedAt: string;
   label?: string | null;
-  s3Bucket?: string | null;
-  s3ObjectKey?: string | null;
-  manifest?: string | null;
   error?: string | null;
-  s3Url?: string | null;
-  s3UrlExpiresAt?: string | null;
   shortUrl?: string | null;
 }
 
@@ -44,24 +39,9 @@ export interface StoredJob {
   lastSyncedAt: string;
   statusUpdatedAt?: string | null;
   progress: number | null;
-  s3Bucket?: string | null;
-  s3ObjectKey?: string | null;
-  manifest?: string | null;
-  s3Url?: string | null;
-  s3UrlExpiresAt?: string | null;
   shortUrl?: string | null;
   error?: string | null;
   sizeBytes?: number | null;
-}
-
-export interface JobPresignResponse {
-  jobId: string;
-  btih: string;
-  bucket: string;
-  key: string;
-  s3Url: string;
-  expiresAt: string;
-  shortUrl: string | null;
 }
 
 export interface CreateJobResponse {
@@ -71,12 +51,7 @@ export interface CreateJobResponse {
   createdAt: string;
   statusUpdatedAt: string;
   progress: number | null;
-  s3Bucket: string | null;
-  s3ObjectKey: string | null;
-  manifest: string | null;
   error: string | null;
-  s3Url: string | null;
-  s3UrlExpiresAt: string | null;
   shortUrl: string | null;
 }
 
@@ -100,7 +75,6 @@ export interface ApiClient {
   getJob(jobId: string): Promise<JobDetail | undefined>;
   deleteJob(jobId: string): Promise<void>;
   health(): Promise<HealthResponse>;
-  getJobPresignedLink(jobId: string): Promise<JobPresignResponse | undefined>;
 }
 
 export type ClientTransport =

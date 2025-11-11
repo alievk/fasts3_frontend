@@ -70,17 +70,12 @@ Response `202`: `JobResponse`
   "status": "queued",
   "status_updated_at": "2025-10-13T15:12:31.123Z",
   "progress": null,
-  "manifest": null,
   "error": null,
-  "s3_bucket": null,
-  "s3_object_key": null,
-  "s3_url": null,
-  "s3_url_expires_at": null
+  "short_url": null
 }
 ```
 - `status` ∈ `queued | downloading | uploading | completed | error`.
-- If the BTIH already exists in the SQLite torrent cache, the job is materialized immediately as `completed` with cached `s3_bucket`/`s3_object_key` and `progress = 1.0`.
-- `manifest` points to a manifest location (filesystem path before upload, S3 key afterwards); fetch real content via the presign flow.
+- If the BTIH already exists in the SQLite torrent cache, the job is materialized immediately as `completed` with cached artifacts and `progress = 1.0`.
 - Every call yields a new `job_id` (10-char nanoid using a URL-safe alphabet) even for duplicate BTIHs.
 
 ### Get Job
@@ -88,9 +83,10 @@ Response `202`: `JobResponse`
 
 Response `200`: same `JobResponse` schema as above. Notes:
 - `progress` is `null` or a clamp in `[0,1]`.
-- `status_updated_at`, `s3_url_expires_at` are ISO 8601 timestamps with `Z`.
-- `s3_bucket`/`s3_object_key` appear after upload; `s3_url`/`s3_url_expires_at` appear after a presign request succeeds.
+- `status_updated_at` is an ISO 8601 timestamp with `Z`.
+- Use `GET /api/jobs/{job_id}/presign_link` for bucket/key/URL details once the job completes.
 - `error` contains the worker-provided reason when `status == "error"`.
+- `short_url` points to `/redirect` (base taken from `Settings.redirect_base_url`) and remains `null` until `status == "completed"`.
 
 Errors:
 - `404` when the job ID never existed or was deleted.
@@ -106,16 +102,14 @@ Response `200`:
   "bucket": "torrent-downloads",
   "key": "jobs/…/files/000_readme.txt",
   "s3_url": "https://s3.amazonaws.com/…",
-  "expires_at": "2025-10-13T15:24:01.591Z",
-  "short_url": "https://app.example/redirect?job_id=4nVP9sQ1aX"
+  "expires_at": "2025-10-13T15:24:01.591Z"
 }
 ```
 
 - Only available once the job is `completed` **and** `s3_bucket` + `s3_object_key` are populated; otherwise `404`.
 - `expires_at` is an ISO timestamp computed as `_utc_now() + presigner.expires_in`.
-- `short_url` points to the `/redirect` helper route (base taken from `Settings.redirect_base_url`).
 - Missing presigner or signing failures return `503` with `{"error": "presign_unavailable", ...}`.
-- Success also writes `s3_url`/`s3_url_expires_at` back into the job record so future status polls can show them.
+- Success also writes `s3_url`/`s3_url_expires_at` back into the job record for redirect handling.
 
 ### Delete Job
 `DELETE /api/jobs/{job_id}`

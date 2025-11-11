@@ -131,6 +131,11 @@ const extractBtih = (magnet: string): string | null => {
   return match?.[1]?.toLowerCase() ?? null;
 };
 
+const normalizeShortUrl = (value?: string | null): string | null => {
+  const trimmed = value?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : null;
+};
+
 const resolveResultTokenValue = (result: SearchResult): string => {
   const fallback = (result.id ?? '').toLowerCase();
   const source = extractBtih(result.magnet) ?? fallback;
@@ -373,29 +378,13 @@ const formatSize = (size: number | null | undefined, locale: string): string => 
   return `${gigabytes.toFixed(2)} GiB`;
 };
 
-const formatDateTime = (primary: string | Date | null | undefined, fallback: Date | undefined, locale: string): string => {
-  const value = primary ?? fallback ?? null;
-  if (!value) {
-    return translate('common.unknown', locale);
-  }
-  const date = typeof value === 'string' ? new Date(value) : value;
-  if (Number.isNaN(date.getTime())) {
-    return translate('common.unknown', locale);
-  }
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'medium'
-  }).format(date);
-};
-
 const buildPlayerUrl = (jobId: string): string => {
   const normalizedBase = config.playerBaseUrl.replace(/\/+$/, '');
   return `${normalizedBase}/public/player/?job_id=${encodeURIComponent(jobId)}`;
 };
 
 const formatJobInfoLines = (job: OwnedJob, locale: string): string[] => {
-  const downloadLink = job.shortUrl ?? job.s3Url ?? null;
-  const expiresAt = job.s3UrlExpiresAt ? formatDateTime(job.s3UrlExpiresAt, undefined, locale) : undefined;
+  const downloadLink = normalizeShortUrl(job.shortUrl ?? null);
   const playerLink = job.lastKnownStatus === 'completed' ? buildPlayerUrl(job.jobId) : undefined;
   const progressText =
     job.lastKnownStatus === 'completed'
@@ -410,7 +399,6 @@ const formatJobInfoLines = (job: OwnedJob, locale: string): string[] => {
     translate('job.progressLine', locale, { progress: progressText }),
     translate('job.sizeLine', locale, { size: formatSize(job.sizeBytes ?? null, locale) }),
     downloadLink ? translate('job.downloadLine', locale, { url: downloadLink }) : undefined,
-    expiresAt ? translate('job.expiresLine', locale, { date: expiresAt }) : undefined,
     playerLink ? translate('job.playerLine', locale, { url: playerLink }) : undefined,
     job.error ? translate('job.errorLine', locale, { message: job.error }) : undefined
   ];
@@ -506,7 +494,7 @@ const startDownloadFromToken = async (
 
 const buildJobActionsKeyboard = (job: OwnedJob, locale: string) => {
   const encodedId = encodeURIComponent(job.jobId);
-  const downloadLink = job.shortUrl ?? job.s3Url ?? null;
+  const downloadLink = normalizeShortUrl(job.shortUrl ?? null);
   const buttons = [
     downloadLink ? Markup.button.url(translate('jobs.actions.openLink', locale), downloadLink) : undefined,
     Markup.button.callback(translate('jobs.actions.refresh', locale), `refresh:${encodedId}`),
@@ -744,8 +732,8 @@ downloadService.on('ready', (jobs) => {
 downloadService.on('jobUpdated', (job) => {
   const previous = trackedJobs.get(job.jobId);
   const statusChanged = !previous || previous.lastKnownStatus !== job.lastKnownStatus;
-  const previousLink = previous?.shortUrl ?? previous?.s3Url ?? null;
-  const currentLink = job.shortUrl ?? job.s3Url ?? null;
+  const previousLink = previous ? normalizeShortUrl(previous.shortUrl ?? null) : null;
+  const currentLink = normalizeShortUrl(job.shortUrl ?? null);
   const linkReady = !previousLink && !!currentLink;
   trackedJobs.set(job.jobId, job);
   if (job.lastKnownStatus !== 'completed' || !currentLink) {

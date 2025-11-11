@@ -17,8 +17,6 @@ type DownloadServiceEvents = {
   ready: (jobs: OwnedJob[]) => void;
 };
 
-const PRESIGNED_REFRESH_THRESHOLD_MS = 5 * 60 * 1000;
-
 const mapDetailToStored = (detail: JobDetail, existing?: StoredJob): StoredJob => ({
   jobId: detail.jobId,
   btih: detail.btih,
@@ -28,11 +26,6 @@ const mapDetailToStored = (detail: JobDetail, existing?: StoredJob): StoredJob =
   lastSyncedAt: new Date().toISOString(),
   statusUpdatedAt: detail.statusUpdatedAt ?? existing?.statusUpdatedAt ?? null,
   progress: detail.progress ?? existing?.progress ?? null,
-  s3Bucket: detail.s3Bucket ?? existing?.s3Bucket ?? null,
-  s3ObjectKey: detail.s3ObjectKey ?? existing?.s3ObjectKey ?? null,
-  manifest: detail.manifest ?? existing?.manifest ?? null,
-  s3Url: detail.s3Url ?? existing?.s3Url ?? null,
-  s3UrlExpiresAt: detail.s3UrlExpiresAt ?? existing?.s3UrlExpiresAt ?? null,
   shortUrl: detail.shortUrl ?? existing?.shortUrl ?? null,
   error: detail.error ?? null,
   sizeBytes: detail.sizeBytes ?? existing?.sizeBytes ?? null
@@ -47,12 +40,7 @@ const newStoredJob = (
   statusUpdatedAt: string,
   progress: number | null,
   sizeBytes: number | undefined,
-  s3Bucket: string | null,
-  s3ObjectKey: string | null,
-  manifest: string | null,
   error: string | null,
-  s3Url: string | null,
-  s3UrlExpiresAt: string | null,
   shortUrl: string | null
 ): StoredJob => ({
   jobId,
@@ -63,11 +51,6 @@ const newStoredJob = (
   lastSyncedAt: new Date().toISOString(),
   statusUpdatedAt,
   progress: progress ?? (status === 'completed' ? 1 : 0),
-  s3Bucket,
-  s3ObjectKey,
-  manifest,
-  s3Url,
-  s3UrlExpiresAt,
   shortUrl,
   error: error ?? null,
   sizeBytes: sizeBytes ?? null
@@ -151,12 +134,7 @@ export class DownloadService extends EventEmitter {
         response.statusUpdatedAt,
         response.progress,
         result.sizeBytes,
-        response.s3Bucket,
-        response.s3ObjectKey,
-        response.manifest,
         response.error,
-        response.s3Url,
-        response.s3UrlExpiresAt,
         response.shortUrl
       );
       const owned = await this.clientRegistry.bindJobToClient(stored, owner);
@@ -196,27 +174,6 @@ export class DownloadService extends EventEmitter {
       }
       let updated = mapDetailToStored(detail, existing ?? undefined);
 
-      if (detail.status === 'completed') {
-        const needsLinkRefresh = this.shouldRefreshDownloadLink(existing);
-        if (needsLinkRefresh) {
-          try {
-            const link = await this.apiClient.getJobPresignedLink(jobId);
-            if (link?.s3Url) {
-              updated = {
-                ...updated,
-                s3Url: link.s3Url,
-                s3Bucket: updated.s3Bucket ?? link.bucket,
-                s3ObjectKey: updated.s3ObjectKey ?? link.key,
-                s3UrlExpiresAt: link.expiresAt,
-                shortUrl: link.shortUrl ?? updated.shortUrl ?? null
-              };
-            }
-          } catch (error) {
-            this.emit('error', error instanceof Error ? error : new Error(String(error)));
-          }
-        }
-      }
-
       const owned: OwnedJob = { ...updated, clientId: existing.clientId };
       this.jobs.set(jobId, owned);
       await this.clientRegistry.updateJob(owned);
@@ -227,19 +184,7 @@ export class DownloadService extends EventEmitter {
   }
 
   async syncAll(): Promise<void> {
-    const jobsToSync = this.getJobs().filter((job) => {
-      if (
-        job.lastKnownStatus === 'queued' ||
-        job.lastKnownStatus === 'downloading' ||
-        job.lastKnownStatus === 'uploading'
-      ) {
-        return true;
-      }
-      if (job.lastKnownStatus === 'completed') {
-        return this.shouldRefreshDownloadLink(job);
-      }
-      return false;
-    });
+    const jobsToSync = this.getJobs().filter((job) => job.lastKnownStatus !== 'completed');
     if (jobsToSync.length === 0) {
       return;
     }
@@ -276,26 +221,6 @@ export class DownloadService extends EventEmitter {
       current = next;
     }
     return current;
-  }
-
-  private shouldRefreshDownloadLink(job: StoredJob | undefined): boolean {
-    if (!job) {
-      return true;
-    }
-    if (!job.s3Url) {
-      return true;
-    }
-
-    if (!job.s3UrlExpiresAt) {
-      return true;
-    }
-
-    const expiresAt = Date.parse(job.s3UrlExpiresAt);
-    if (Number.isNaN(expiresAt)) {
-      return true;
-    }
-
-    return expiresAt - Date.now() <= PRESIGNED_REFRESH_THRESHOLD_MS;
   }
 
   private resolveClientId(clientId?: string): string {
