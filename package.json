@@ -6,6 +6,7 @@
   "scripts": {
     "cli": "tsx src/cli.tsx",
     "build": "tsc --project tsconfig.json",
+    "postbuild": "node scripts/syncPlayer.mjs",
     "start": "node dist/player/main.js",
     "lint": "tsc --noEmit",
     "test": "tsx --test src/__tests__/**/*.test.ts",
