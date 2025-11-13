@@ -1,3 +1,4 @@
+import { Agent as HttpsAgent } from 'node:https';
 import { Telegraf, Markup } from 'telegraf';
 import type { Context } from 'telegraf';
 import { loadConfig } from './config.js';
@@ -91,7 +92,8 @@ const clientRegistry = createClientRegistry(config.clientDbPath);
 const searchPipeline = createSearchPipeline(config);
 const downloadService = new DownloadService(apiClient, clientRegistry, config.searchLimit, searchPipeline);
 const poller = new Poller(downloadService, config.pollingIntervalMs);
-const bot = new Telegraf(botToken);
+const telegramIpv4Agent = new HttpsAgent({ family: 4 });
+const bot = new Telegraf(botToken, { telegram: { agent: telegramIpv4Agent } });
 let botUsername: string | undefined;
 const getBotUsername = (): string => {
   if (!botUsername) {
