@@ -8,7 +8,7 @@ import { Poller } from './poller.js';
 import { JobStatus, OwnedJob, SearchResult } from './types.js';
 import { createSearchPipeline } from './searchPipeline.js';
 import { createClientRegistry } from './clientRegistry.js';
-import botTranslationsData from './locales/bot.json' assert { type: 'json' };
+import botTranslationsData from './locales/bot.json' with { type: 'json' };
 
 type SendMessageExtra = Parameters<Telegraf['telegram']['sendMessage']>[2];
 
