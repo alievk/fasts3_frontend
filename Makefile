@@ -1,6 +1,6 @@
 COMPOSE = docker compose -f docker-compose.yml
 
-.PHONY: up down logs build
+.PHONY: up down logs build restart
 
 up:
 	$(COMPOSE) up -d $(S)
@@ -13,3 +13,6 @@ logs:
 
 build:
 	$(COMPOSE) build
+
+restart:
+	$(COMPOSE) restart $(S)
