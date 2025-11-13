@@ -13,7 +13,25 @@ The shared TypeScript service layer powers:
 
 The backend contract lives in `docs/backend_spec.md`.
 
+## Docker Quick Start
+
+Docker Compose is the recommended way to run the bot and player without installing Node on the host.
+
+```bash
+cp .env.example .env
+# edit .env with your API endpoint, token, and optional overrides
+docker compose up -d            # or: make up
+```
+
+- `docker compose logs -f telegram-bot` (or `make logs S=telegram-bot`) tails the bot.
+- `docker compose logs -f player` exposes player logs; the UI is at http://localhost:8080.
+- `docker compose down` (or `make down`) stops and removes the containers.
+
+Compose mounts the workspace and runs `npm install` inside each service, so code edits on the host are reflected immediately.
+
 ## Prerequisites
+
+Skip this section if you use Docker; it's only required for manual host deployments.
 
 - Node.js 20+ (Ink 6 and `tsx` require the current LTS toolchain).
 - npm (bundled with Node).
