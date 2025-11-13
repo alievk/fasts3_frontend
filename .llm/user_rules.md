@@ -46,7 +46,9 @@ Instead, keep to the following plan:
 
 2. After I answered, give me 2-3 differenet optimal plans how you gonna proceed with feature. Do NOT apply changes to my code right away. Format as # Plan A ... # Plan B
 
-3. Once we polished the plan together, I will give you permission to make code edits and then you go and implement selected plan. When I tell GO!, proceed with the following without further user prompt:
+3. Once we polished the plan together, I will give you permission to make code edits and then you go and implement selected plan.
+Proceed with the first plan you proposed if I don't specify it.
+When I tell GO!, proceed with the following without further user prompt:
  - create a detailed todo checklist in .llm/todo_{short_task_tile}.md
  - implement tasks from the created todo checklist step-by-step
 
