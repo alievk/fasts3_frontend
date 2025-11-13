@@ -382,7 +382,7 @@ const formatSize = (size: number | null | undefined, locale: string): string => 
 
 const buildPlayerUrl = (jobId: string): string => {
   const normalizedBase = config.playerBaseUrl.replace(/\/+$/, '');
-  return `${normalizedBase}/public/player/?job_id=${encodeURIComponent(jobId)}`;
+  return `${normalizedBase}?job_id=${encodeURIComponent(jobId)}`;
 };
 
 const canStreamJob = (job: OwnedJob): boolean => {
