@@ -9,10 +9,11 @@ import dotenv from 'dotenv';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..');
+const playerDistDir = path.join(repoRoot, 'public', 'player');
 
 dotenv.config({ path: path.join(repoRoot, '.env') });
 
-const runtimeConfigPath = path.join(repoRoot, 'public', 'player', 'runtime-config.js');
+const runtimeConfigPath = path.join(playerDistDir, 'runtime-config.js');
 
 const normalizeUrl = (value) => {
   if (!value || typeof value !== 'string') {
@@ -45,7 +46,7 @@ const runtimeSource = `window.__TORRENT_PLAYER_CONFIG__ = Object.assign({}, wind
 
 await fs.writeFile(runtimeConfigPath, runtimeSource, 'utf8');
 
-const server = spawn('npx', ['http-server', '.', '-p', '8080', '--cors'], {
+const server = spawn('npx', ['http-server', playerDistDir, '-p', '8080', '--cors'], {
   cwd: repoRoot,
   stdio: 'inherit',
   env: process.env
