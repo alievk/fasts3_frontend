@@ -1,12 +1,92 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 if (typeof window !== 'undefined') {
   console.log('[Player] bundle loaded');
 }
 
+const SUPPORTED_LOCALES = ['ru', 'en'] as const;
+type Locale = (typeof SUPPORTED_LOCALES)[number];
+
+interface ErrorDescriptor {
+  key: string;
+  params?: Record<string, string | number | ErrorDescriptor | undefined>;
+}
+
+type LocaleMessages = Record<string, string>;
+
+const LOCALES_FILE = 'locales.json';
+
+const LOCALE_OPTIONS: { code: Locale; label: string }[] = [
+  { code: 'ru', label: 'RU' },
+  { code: 'en', label: 'EN' }
+];
+
+const DEFAULT_LOCALE: Locale = 'ru';
+const LOCALE_STORAGE_KEY = 'torrent_player_locale';
+
+const isLocale = (value: string | null | undefined): value is Locale =>
+  Boolean(value && SUPPORTED_LOCALES.includes(value as Locale));
+
+const readInitialLocale = (): Locale => {
+  if (typeof window === 'undefined') return DEFAULT_LOCALE;
+  try {
+    const stored = window.localStorage.getItem(LOCALE_STORAGE_KEY);
+    if (isLocale(stored)) return stored;
+  } catch {
+    // ignore
+  }
+  return DEFAULT_LOCALE;
+};
+
+const buildLocalesUrl = (): string => new URL(`../${LOCALES_FILE}`, import.meta.url).toString();
+
+const parseLocalesPayload = (payload: unknown): Map<Locale, LocaleMessages> => {
+  const map = new Map<Locale, LocaleMessages>();
+  if (!payload || typeof payload !== 'object') {
+    return map;
+  }
+  const record = payload as Record<string, unknown>;
+  for (const locale of SUPPORTED_LOCALES) {
+    const candidate = record[locale];
+    if (!candidate || typeof candidate !== 'object') {
+      continue;
+    }
+    const messages: LocaleMessages = {};
+    for (const [key, value] of Object.entries(candidate as Record<string, unknown>)) {
+      if (typeof value === 'string') {
+        messages[key] = value;
+      }
+    }
+    if (Object.keys(messages).length > 0) {
+      map.set(locale, messages);
+    }
+  }
+  return map;
+};
+
+class PlayerError extends Error {
+  descriptor: ErrorDescriptor;
+
+  constructor(descriptor: ErrorDescriptor) {
+    super(descriptor.key);
+    this.descriptor = descriptor;
+    this.name = 'PlayerError';
+  }
+}
+
+const describeUnknownError = (error: unknown): ErrorDescriptor => {
+  if (error instanceof PlayerError) {
+    return error.descriptor;
+  }
+  if (error instanceof Error) {
+    return { key: 'errors.generic', params: { message: error.message } };
+  }
+  return { key: 'errors.generic', params: { message: String(error) } };
+};
+
 type PlayerState =
   | { status: 'loading' }
-  | { status: 'error'; message: string }
+  | { status: 'error'; error: ErrorDescriptor }
   | { status: 'ready'; url: string; label: string | null };
 
 type PlayerRuntimeConfig = {
@@ -34,8 +114,95 @@ const readRuntimeConfig = (): PlayerRuntimeConfig => {
 
 export const PlayerApp: React.FC = () => {
   const [playerState, setPlayerState] = useState<PlayerState>({ status: 'loading' });
+  const [locale, setLocale] = useState<Locale>(() => readInitialLocale());
+  const [messages, setMessages] = useState<LocaleMessages | null>(null);
+  const [localeLoadError, setLocaleLoadError] = useState<string | null>(null);
   const runtimeConfig = useMemo(() => readRuntimeConfig(), []);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const localeCache = useRef<Map<Locale, LocaleMessages>>(new Map());
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(LOCALE_STORAGE_KEY, locale);
+    } catch {
+      // ignore
+    }
+  }, [locale]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const cached = localeCache.current.get(locale);
+    if (cached) {
+      setMessages(cached);
+      setLocaleLoadError(null);
+      return;
+    }
+
+    setMessages(null);
+    const controller = new AbortController();
+    setLocaleLoadError(null);
+
+    const load = async (): Promise<void> => {
+      try {
+        const response = await fetch(buildLocalesUrl(), { signal: controller.signal });
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        const payload = await response.json();
+        const parsed = parseLocalesPayload(payload);
+        parsed.forEach((value, code) => {
+          localeCache.current.set(code, value);
+        });
+        const resolved = localeCache.current.get(locale);
+        if (!cancelled) {
+          if (resolved) {
+            setMessages(resolved);
+            setLocaleLoadError(null);
+          } else {
+            setLocaleLoadError(`Locale ${locale} missing in payload.`);
+          }
+        }
+      } catch (error) {
+        if (cancelled) return;
+        console.error('[Player] failed to load locales', error);
+        setLocaleLoadError(error instanceof Error ? error.message : String(error));
+      }
+    };
+
+    void load();
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [locale]);
+
+  const renderDescriptor = useCallback(
+    (descriptor: ErrorDescriptor): string => {
+      if (!messages) return descriptor.key;
+      const template = messages[descriptor.key];
+      if (!template) return descriptor.key;
+      if (!descriptor.params) return template;
+      return template.replace(/\{\{(\w+)\}\}/g, (_, token) => {
+        const value = descriptor.params?.[token];
+        if (value === undefined || value === null) {
+          return '';
+        }
+        if (typeof value === 'object' && 'key' in value) {
+          return renderDescriptor(value as ErrorDescriptor);
+        }
+        return String(value);
+      });
+    },
+    [messages]
+  );
+
+  const translate = useCallback(
+    (key: string, params?: Record<string, string | number | ErrorDescriptor | undefined>): string =>
+      renderDescriptor({ key, params }),
+    [renderDescriptor]
+  );
 
   const displayLabel = useMemo(() => {
     if (playerState.status !== 'ready') return null;
@@ -56,20 +223,23 @@ export const PlayerApp: React.FC = () => {
     const resolveVideoUrl = (value: string): string => {
       const trimmed = value.trim();
       if (trimmed.length === 0) {
-        throw new Error('Missing required videoUrl parameter.');
+        throw new PlayerError({ key: 'errors.videoUrlMissing' });
       }
 
       try {
         const normalized = new URL(trimmed);
         if (!['http:', 'https:'].includes(normalized.protocol)) {
-          throw new Error('videoUrl must be an HTTP or HTTPS link.');
+          throw new PlayerError({ key: 'errors.videoUrlProtocol' });
         }
         return normalized.toString();
       } catch (error) {
-        if (error instanceof Error && error.message === 'videoUrl must be an HTTP or HTTPS link.') {
+        if (error instanceof PlayerError) {
           throw error;
         }
-        throw new Error(`Invalid videoUrl parameter: ${error instanceof Error ? error.message : String(error)}`);
+        throw new PlayerError({
+          key: 'errors.videoUrlInvalid',
+          params: { message: error instanceof Error ? error.message : String(error) }
+        });
       }
     };
 
@@ -79,9 +249,10 @@ export const PlayerApp: React.FC = () => {
           const normalized = new URL(runtimeConfig.apiBaseUrl);
           return normalized.toString().replace(/\/$/, '');
         } catch (error) {
-          throw new Error(
-            `Invalid runtime apiBase: ${error instanceof Error ? error.message : String(error)}`
-          );
+          throw new PlayerError({
+            key: 'errors.runtimeApiInvalid',
+            params: { message: error instanceof Error ? error.message : String(error) }
+          });
         }
       }
 
@@ -89,13 +260,12 @@ export const PlayerApp: React.FC = () => {
         const fallback = new URL('/api', window.location.origin);
         return fallback.toString().replace(/\/$/, '');
       } catch (error) {
-        throw new Error(
-          `Failed to determine API base URL: ${error instanceof Error ? error.message : String(error)}`
-        );
+        throw new PlayerError({
+          key: 'errors.apiBaseResolutionFailed',
+          params: { message: error instanceof Error ? error.message : String(error) }
+        });
       }
     };
-
-    const asMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
     const fetchJson = async (endpoint: URL): Promise<unknown> => {
       console.log('[Player] fetching', endpoint.toString());
@@ -105,20 +275,28 @@ export const PlayerApp: React.FC = () => {
         response = await fetch(endpoint.toString(), { headers });
       } catch (error) {
         console.error('[Player] network error while fetching', endpoint.toString(), error);
-        throw new Error(
-          `Network error while fetching ${endpoint.pathname}: ${error instanceof Error ? error.message : String(error)}`
-        );
+        throw new PlayerError({
+          key: 'errors.fetchNetwork',
+          params: {
+            path: endpoint.pathname,
+            message: error instanceof Error ? error.message : String(error)
+          }
+        });
       }
 
       if (response.status === 404) {
-        throw new Error('Job not found.');
+        throw new PlayerError({ key: 'errors.jobNotFound' });
       }
 
       if (!response.ok) {
         const body = await response.text().catch(() => '');
-        throw new Error(
-          `Request failed with status ${response.status}${body ? ` — ${body}` : ''}`
-        );
+        throw new PlayerError({
+          key: 'errors.requestFailed',
+          params: {
+            status: String(response.status),
+            body: body ? ` — ${body}` : ''
+          }
+        });
       }
 
       if (response.status === 204) {
@@ -128,9 +306,13 @@ export const PlayerApp: React.FC = () => {
       try {
         return await response.json();
       } catch (error) {
-        throw new Error(
-          `Failed to parse response from ${endpoint.pathname}: ${error instanceof Error ? error.message : String(error)}`
-        );
+        throw new PlayerError({
+          key: 'errors.responseParsing',
+          params: {
+            path: endpoint.pathname,
+            message: error instanceof Error ? error.message : String(error)
+          }
+        });
       }
     };
 
@@ -158,20 +340,23 @@ export const PlayerApp: React.FC = () => {
       const payload = (await fetchJson(detailEndpoint)) as Record<string, unknown> | undefined;
 
       if (!payload || typeof payload !== 'object') {
-        throw new Error('Job details unavailable.');
+        throw new PlayerError({ key: 'errors.jobDetailsUnavailable' });
       }
 
       const status = typeof payload.status === 'string' ? payload.status : 'unknown';
       if (status === 'error') {
         const message =
           typeof payload.error === 'string' && payload.error.trim().length > 0
-            ? payload.error
-            : 'Job failed.';
-        throw new Error(message);
+            ? payload.error.trim()
+            : null;
+        if (message) {
+          throw new PlayerError({ key: 'errors.jobFailedWithReason', params: { reason: message } });
+        }
+        throw new PlayerError({ key: 'errors.jobFailedGeneric' });
       }
 
       if (status !== 'completed') {
-        throw new Error(`Job ${jobId} is ${status}. Try again later.`);
+        throw new PlayerError({ key: 'errors.jobNotReady', params: { jobId, status } });
       }
 
       const shortUrl = extractUrl(payload.short_url ?? null);
@@ -179,7 +364,7 @@ export const PlayerApp: React.FC = () => {
         typeof payload.label === 'string' && payload.label.trim().length > 0 ? payload.label.trim() : null;
       if (shortUrl) return { url: shortUrl, label };
 
-      throw new Error('Backend did not provide a redirect URL.');
+      throw new PlayerError({ key: 'errors.missingRedirect' });
     };
 
     let cancelled = false;
@@ -195,13 +380,13 @@ export const PlayerApp: React.FC = () => {
       }
     };
 
-    const setError = (message: string) => {
+    const setError = (descriptor: ErrorDescriptor) => {
       if (!cancelled) {
         setPlayerState({
           status: 'error',
-          message
+          error: descriptor
         });
-        console.error('[Player] error state', message);
+        console.error('[Player] error state', descriptor);
       }
     };
 
@@ -222,14 +407,27 @@ export const PlayerApp: React.FC = () => {
             } catch (fallbackError) {
               console.error('[Player] fallback videoUrl failed', fallbackError);
               setError(
-                `Unable to resolve job ${jobIdParam}: ${asMessage(error)}. Fallback videoUrl failed: ${asMessage(fallbackError)}`
+                {
+                  key: 'errors.jobResolveWithFallback',
+                  params: {
+                    jobId: jobIdParam,
+                    primary: describeUnknownError(error),
+                    fallback: describeUnknownError(fallbackError)
+                  }
+                }
               );
               return;
             }
           }
 
           console.error('[Player] job resolution failed without fallback', error);
-          setError(`Unable to resolve job ${jobIdParam}: ${asMessage(error)}`);
+          setError({
+            key: 'errors.jobResolve',
+            params: {
+              jobId: jobIdParam,
+              error: describeUnknownError(error)
+            }
+          });
           return;
         }
       }
@@ -240,12 +438,12 @@ export const PlayerApp: React.FC = () => {
           setReady(normalized, null);
         } catch (error) {
           console.error('[Player] invalid videoUrl parameter', error);
-          setError(asMessage(error));
+          setError(describeUnknownError(error));
         }
         return;
       }
 
-      setError('Missing required job_id or videoUrl parameter.');
+      setError({ key: 'errors.jobOrUrlMissing' });
     };
 
     void run();
@@ -270,29 +468,29 @@ export const PlayerApp: React.FC = () => {
 
     const onError = (): void => {
       const error = video.error;
-      let message = 'Video playback failed.';
+      let descriptor: ErrorDescriptor = { key: 'errors.videoPlaybackFailed' };
       if (error) {
         switch (error.code) {
           case error.MEDIA_ERR_ABORTED:
-            message = 'Playback aborted.';
+            descriptor = { key: 'errors.videoPlaybackAborted' };
             break;
           case error.MEDIA_ERR_NETWORK:
-            message = 'Network error while streaming the video.';
+            descriptor = { key: 'errors.videoPlaybackNetwork' };
             break;
           case error.MEDIA_ERR_DECODE:
-            message = 'Browser could not decode this video format.';
+            descriptor = { key: 'errors.videoPlaybackDecode' };
             break;
           case error.MEDIA_ERR_SRC_NOT_SUPPORTED:
-            message = 'Video format not supported by this browser.';
+            descriptor = { key: 'errors.videoPlaybackUnsupported' };
             break;
           default:
-            message = 'Unknown playback error.';
+            descriptor = { key: 'errors.videoPlaybackUnknown' };
         }
       }
       console.error('[Player] video error', { code: error?.code, message: error?.message });
       setPlayerState({
         status: 'error',
-        message: `${message} Use the download button to save the file locally.`
+        error: descriptor
       });
     };
 
@@ -308,10 +506,19 @@ export const PlayerApp: React.FC = () => {
   // Do not guess media type from URL; backend link lacks filename.
 
   useEffect(() => {
+    if (!messages) {
+      document.title = 'Video Player';
+      return;
+    }
     if (playerState.status === 'ready' && displayLabel) {
-      document.title = `${displayLabel} • Video Player`;
-    } else document.title = 'Video Player';
-  }, [playerState, displayLabel]);
+      document.title = translate('title.withLabel', {
+        label: displayLabel,
+        title: translate('title.base')
+      });
+    } else {
+      document.title = translate('title.base');
+    }
+  }, [playerState, displayLabel, messages, translate]);
 
   const styles = `
     :root {
@@ -354,6 +561,43 @@ export const PlayerApp: React.FC = () => {
 
     .page__header {
       text-align: center;
+    }
+
+    .page__toolbar {
+      width: 100%;
+      display: flex;
+      justify-content: flex-end;
+    }
+
+    .locale-switch {
+      display: inline-flex;
+      gap: 4px;
+      padding: 4px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .locale-switch__button {
+      border: none;
+      background: transparent;
+      color: #f5f5f7;
+      padding: 4px 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s ease-in-out, color 0.2s ease-in-out;
+    }
+
+    .locale-switch__button--active {
+      background: #1f6feb;
+      color: #ffffff;
+    }
+
+    .locale-switch__button:focus-visible {
+      outline: 2px solid rgba(31, 111, 235, 0.6);
+      outline-offset: 1px;
     }
 
     .page__header h1 {
@@ -444,11 +688,22 @@ export const PlayerApp: React.FC = () => {
     }
   `;
 
+  if (!messages) {
+    return (
+      <div className="page">
+        <style>{styles}</style>
+        <div className={`message${localeLoadError ? ' message--error' : ''}`}>
+          {localeLoadError ? `Failed to load locales (${locale}). ${localeLoadError}` : 'Loading language…'}
+        </div>
+      </div>
+    );
+  }
+
   if (playerState.status === 'loading') {
     return (
       <div className="page">
         <style>{styles}</style>
-        <div className="message">Loading…</div>
+        <div className="message">{translate('messages.loading')}</div>
       </div>
     );
   }
@@ -457,7 +712,7 @@ export const PlayerApp: React.FC = () => {
     return (
       <div className="page">
         <style>{styles}</style>
-        <div className="message message--error">{playerState.message}</div>
+        <div className="message message--error">{renderDescriptor(playerState.error)}</div>
       </div>
     );
   }
@@ -467,9 +722,28 @@ export const PlayerApp: React.FC = () => {
   return (
     <div className="page">
       <style>{styles}</style>
+      <div className="page__toolbar">
+        <div className="locale-switch" role="group" aria-label={translate('locale.label')}>
+          {LOCALE_OPTIONS.map((option) => (
+            <button
+              key={option.code}
+              type="button"
+              className={`locale-switch__button${locale === option.code ? ' locale-switch__button--active' : ''}`}
+              onClick={() => {
+                if (locale !== option.code) {
+                  setLocale(option.code);
+                }
+              }}
+              aria-pressed={locale === option.code}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </div>
       <header className="page__header">
         {displayLabel ? <h1>{displayLabel}</h1> : null}
-        <p>Stream, download for offline viewing, or AirPlay in Safari.</p>
+        <p>{translate('page.tagline')}</p>
       </header>
       <section className="player">
         <video
@@ -485,7 +759,7 @@ export const PlayerApp: React.FC = () => {
         </video>
         <div className="actions">
           <a className="button" href={playerState.url} download rel="noopener" target="_blank">
-            Download
+            {translate('buttons.download')}
           </a>
         </div>
       </section>
