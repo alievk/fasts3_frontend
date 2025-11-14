@@ -154,7 +154,6 @@ const createPlaceholderResult = (provider: string, id: string): SearchResult => 
 });
 
 const searchSessions = new Map<number, SearchSession>();
-const awaitingSearchQuery = new Set<number>();
 const trackedJobs = new Map<string, OwnedJob>();
 const removalSuppressions = new Map<string, string>();
 
@@ -597,13 +596,15 @@ bot.command('search', async (ctx) => {
   if (!chatId) {
     return;
   }
-  awaitingSearchQuery.add(chatId);
   await ctx.reply(translateForChat(chatId, 'search.prompt'));
 });
 
 bot.on('message', async (ctx, next) => {
   const chatId = ctx.chat?.id;
   if (!chatId) {
+    return next();
+  }
+  if (ctx.chat.type !== 'private') {
     return next();
   }
   const message = ctx.message;
@@ -617,16 +618,13 @@ bot.on('message', async (ctx, next) => {
   if (isCommand) {
     return next();
   }
-  if (!awaitingSearchQuery.has(chatId)) {
-    return next();
-  }
   const query = text.trim();
   if (!query) {
     await ctx.reply(translateForChat(chatId, 'search.prompt'));
     return;
   }
-  awaitingSearchQuery.delete(chatId);
   try {
+    await ctx.reply(translateForChat(chatId, 'search.searching', { query }));
     const rawResults = await downloadService.search(query);
     if (rawResults.length === 0) {
       await ctx.reply(translateForChat(chatId, 'search.noResults', { query }));
