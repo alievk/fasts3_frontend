@@ -5,7 +5,7 @@ import { loadConfig } from './config.js';
 import { createApiClient } from './apiClient.js';
 import { DownloadService } from './downloadService.js';
 import { Poller } from './poller.js';
-import { JobStatus, OwnedJob, SearchResult } from './types.js';
+import { JobStatus, OwnedJob, SearchResult, SearchResultDetail } from './types.js';
 import { createSearchPipeline } from './searchPipeline.js';
 import { createClientRegistry } from './clientRegistry.js';
 import botTranslationsData from './locales/bot.json' with { type: 'json' };
@@ -117,7 +117,10 @@ type SearchSession = {
 };
 
 const searchPageSize = config.searchPageSize;
-const DOWNLOAD_PAYLOAD_PREFIX = 'download_';
+const DETAIL_PAYLOAD_PREFIX = 'details_';
+const DOWNLOAD_CONFIRM_PREFIX = 'confirm:';
+const DOWNLOAD_CANCEL_ACTION = 'dismiss-detail';
+const STREAM_INFO_PAYLOAD_PREFIX = 'streamhelp:';
 const MAX_RESULT_TOKENS = 500;
 
 type ResultTokenRecord = {
@@ -127,31 +130,45 @@ type ResultTokenRecord = {
 
 const resultTokenStore = new Map<string, ResultTokenRecord>();
 const resultTokenOrder: string[] = [];
-
-const extractBtih = (magnet: string): string | null => {
-  const match = magnet.match(/btih:([a-z0-9]+)/i);
-  return match?.[1]?.toLowerCase() ?? null;
-};
+const resultDetailCache = new Map<string, SearchResultDetail>();
 
 const normalizeShortUrl = (value?: string | null): string | null => {
   const trimmed = value?.trim();
   return trimmed && trimmed.length > 0 ? trimmed : null;
 };
 
-const resolveResultTokenValue = (result: SearchResult): string => {
-  const fallback = (result.id ?? '').toLowerCase();
-  const source = extractBtih(result.magnet) ?? fallback;
-  const normalized = source.toLowerCase();
-  return normalized.slice(-6) || normalized || fallback || 'unknown';
+const resolveResultTokenValue = (result: SearchResult): string => `${result.provider.toLowerCase()}_${result.id}`;
+
+const parseDetailToken = (token: string | undefined | null): { provider: string; id: string } | null => {
+  if (!token) {
+    return null;
+  }
+  const [provider, ...rest] = token.split('_');
+  if (!provider || rest.length === 0) {
+    return null;
+  }
+  const id = rest.join('_');
+  if (!id) {
+    return null;
+  }
+  return { provider: provider.toLowerCase(), id };
 };
 
 const buildResultTokenKey = (chatId: number, token: string): string => `${chatId}:${token}`;
+
+const cacheResultDetail = (chatId: number, token: string, detail: SearchResultDetail): void => {
+  resultDetailCache.set(buildResultTokenKey(chatId, token), detail);
+};
+
+const resolveCachedResultDetail = (chatId: number, token: string): SearchResultDetail | undefined =>
+  resultDetailCache.get(buildResultTokenKey(chatId, token));
 
 const removeResultTokenKey = (key: string): void => {
   const index = resultTokenOrder.indexOf(key);
   if (index >= 0) {
     resultTokenOrder.splice(index, 1);
   }
+  resultDetailCache.delete(key);
 };
 
 const pruneResultTokens = (): void => {
@@ -161,16 +178,21 @@ const pruneResultTokens = (): void => {
       break;
     }
     resultTokenStore.delete(oldest);
+    resultDetailCache.delete(oldest);
   }
 };
 
-const storeResultToken = (chatId: number, result: SearchResult): string => {
-  const token = resolveResultTokenValue(result);
+const registerResultToken = (chatId: number, token: string, result: SearchResult): void => {
   const key = buildResultTokenKey(chatId, token);
   removeResultTokenKey(key);
   resultTokenStore.set(key, { chatId, result });
   resultTokenOrder.push(key);
   pruneResultTokens();
+};
+
+const storeResultToken = (chatId: number, result: SearchResult): string => {
+  const token = resolveResultTokenValue(result);
+  registerResultToken(chatId, token, result);
   return token;
 };
 
@@ -184,6 +206,16 @@ const resolveResultToken = (chatId: number, token: string): SearchResult | null 
   }
   return record.result;
 };
+
+const createPlaceholderResult = (provider: string, id: string): SearchResult => ({
+  id,
+  provider,
+  providerLabel: provider,
+  title: id,
+  sizeBytes: null,
+  seeders: 0,
+  leechers: 0
+});
 
 type ConversationState =
   | {
@@ -369,15 +401,11 @@ const deleteSearchMessage = async (chatId: number, messageId: number): Promise<v
 const formatStatus = (status: JobStatus, locale: string): string => translate(`status.${status}`, locale);
 
 const formatSize = (size: number | null | undefined, locale: string): string => {
-  if (typeof size !== 'number' || Number.isNaN(size)) {
+  if (typeof size !== 'number' || Number.isNaN(size) || size <= 0) {
     return translate('common.unknown', locale);
   }
-  const gigabytes = size / (1024 * 1024 * 1024);
-  if (size < 100 * 1024 * 1024) {
-    const megabytes = size / (1024 * 1024);
-    return `${megabytes.toFixed(1)} MiB`;
-  }
-  return `${gigabytes.toFixed(2)} GiB`;
+  const value = (size / (1024 * 1024 * 1024)).toFixed(2);
+  return translate('common.sizeGb', locale, { value });
 };
 
 const buildPlayerUrl = (jobId: string): string => {
@@ -429,17 +457,52 @@ const buildStartLink = (payload: string): string => {
   const username = getBotUsername();
   return `https://t.me/${username}?start=${encodeURIComponent(payload)}`;
 };
+
+const normalizeStartPayload = (payload?: string | null): string | undefined => {
+  if (!payload) {
+    return undefined;
+  }
+  try {
+    return decodeURIComponent(payload);
+  } catch {
+    return payload;
+  }
+};
+
+const normalizeDetailHash = (detail: SearchResultDetail): SearchResultDetail => {
+  const trimmed = detail.hash?.trim();
+  return { ...detail, hash: trimmed && trimmed.length > 0 ? trimmed : null };
+};
+
+const getLargestFileExtension = (detail: SearchResultDetail): string | null => {
+  if (!detail.files.length) {
+    return null;
+  }
+  const sorted = [...detail.files].sort((a, b) => {
+    const left = a.sizeBytes ?? 0;
+    const right = b.sizeBytes ?? 0;
+    return right - left;
+  });
+  const candidate = sorted.find((file) => typeof file.sizeBytes === 'number' && file.sizeBytes > 0) ?? sorted[0];
+  const name = candidate?.name ?? '';
+  const match = name.match(/(\.[^.\s]+)$/i);
+  if (!match) {
+    return null;
+  }
+  const cleaned = match[1].toLowerCase().replace(/^\./, '');
+  return cleaned.length > 0 ? cleaned : null;
+};
 const formatDownloadLinkLine = (token: string, locale: string): string => {
-  const payload = `${DOWNLOAD_PAYLOAD_PREFIX}${token}`;
+  const payload = `${DETAIL_PAYLOAD_PREFIX}${token}`;
   const label = translate('search.downloadLinkLabel', locale);
   const link = `<a href="${buildStartLink(payload)}">${escapeHtml(label)}</a>`;
   return translate('search.downloadLinkLine', locale, { url: link });
 };
-const parseDownloadPayload = (payload?: string | null): string | null => {
-  if (!payload || !payload.startsWith(DOWNLOAD_PAYLOAD_PREFIX)) {
+const parseDetailPayload = (payload?: string | null): string | null => {
+  if (!payload || !payload.startsWith(DETAIL_PAYLOAD_PREFIX)) {
     return null;
   }
-  const token = payload.slice(DOWNLOAD_PAYLOAD_PREFIX.length).trim();
+  const token = payload.slice(DETAIL_PAYLOAD_PREFIX.length).trim();
   return token || null;
 };
 
@@ -453,6 +516,7 @@ const buildSearchPage = (results: SearchResultWithToken[], requestedPage: number
     const displayIndex = index + 1;
     return [
       `${displayIndex}. ${escapeHtml(normalizeTitle(result.title))}`,
+      escapeHtml(translate('search.providerLine', locale, { provider: result.providerLabel || result.provider })),
       escapeHtml(translate('search.sizeLine', locale, { size: formatSize(result.sizeBytes, locale) })),
       escapeHtml(translate('search.peersLine', locale, { seeders: result.seeders, leechers: result.leechers })),
       formatDownloadLinkLine(result.token, locale)
@@ -477,32 +541,67 @@ const buildSearchPage = (results: SearchResultWithToken[], requestedPage: number
   };
 };
 
+const buildDownloadConfirmationKeyboard = (token: string, locale: string) =>
+  Markup.inlineKeyboard(
+    [Markup.button.callback(translate('search.detailConfirm', locale), `${DOWNLOAD_CONFIRM_PREFIX}${encodeURIComponent(token)}`)],
+    { columns: 1 }
+  );
+
 const startDownloadFromToken = async (
   chatId: number,
   token: string,
-  replyFn: (text: string) => Promise<unknown>
+  replyFn: (text: string, extra?: SendMessageExtra) => Promise<unknown>
 ): Promise<void> => {
   const locale = getChatLocale(chatId);
-  const result = token ? resolveResultToken(chatId, token) : null;
-  if (!result) {
+  const parsed = parseDetailToken(token);
+  if (!parsed) {
     await replyFn(translate('search.expired', locale));
     return;
   }
-  const clientId = await ensureTelegramClient(chatId);
+  const stored = token ? resolveResultToken(chatId, token) : null;
+  const baseResult = stored ?? createPlaceholderResult(parsed.provider, parsed.id);
   try {
-    const job = await downloadService.startDownload(result, clientId);
-    await replyFn(
-      [
-        translate('downloads.summaryTitle', locale, { title: result.title }),
-        translate('job.jobIdLine', locale, { jobId: job.jobId }),
-        translate('job.btihLine', locale, { btih: job.btih }),
-        '',
-        translate('downloads.checkStatusHint', locale)
-      ].join('\n')
-    );
+    const fetchedDetail = await downloadService.getSearchResultDetail(baseResult);
+    if (!fetchedDetail) {
+      await replyFn(translate('search.detailUnavailable', locale, { provider: baseResult.providerLabel || baseResult.provider, id: baseResult.id }));
+      return;
+    }
+    const detail = normalizeDetailHash(fetchedDetail);
+    const ensuredResult = stored ?? { ...baseResult, title: detail.title ?? baseResult.title };
+    registerResultToken(chatId, token, ensuredResult);
+    cacheResultDetail(chatId, token, detail);
+    const rawExtension = getLargestFileExtension(detail);
+    const normalizedExt = rawExtension?.toLowerCase();
+    let canStream = normalizedExt === 'mp4';
+    if (!canStream && (!rawExtension || detail.files.length === 0)) {
+      const titleLookup = (detail.title ?? ensuredResult.title ?? '').toLowerCase();
+      if (titleLookup.includes('mp4')) {
+        canStream = true;
+      }
+    }
+    const extensionValue = rawExtension ?? 'unknown';
+    const extensionDisplay = rawExtension ?? translate('common.unknown', locale);
+    const streamOption = translate(canStream ? 'common.yes' : 'common.no', locale);
+    const streamLineBase = translate('search.detailStreamLine', locale, { option: streamOption });
+    const streamLineText = canStream
+      ? escapeHtml(streamLineBase)
+      : `${escapeHtml(streamLineBase)} (<a href="${escapeHtml(buildStartLink(`${STREAM_INFO_PAYLOAD_PREFIX}${extensionValue}`))}">${escapeHtml(translate('search.streamWhy', locale))}</a>)`;
+    const hashValue = detail.hash ?? translate('common.unknown', locale);
+    const displayTitle = ensuredResult.title ?? detail.title ?? baseResult.title;
+    const detailLines = [
+      escapeHtml(translate('search.detailTitleLine', locale, { title: displayTitle })),
+      escapeHtml(translate('search.detailProviderLine', locale, { provider: ensuredResult.providerLabel || ensuredResult.provider })),
+      escapeHtml(translate('search.detailIdLine', locale, { id: ensuredResult.id })),
+      escapeHtml(translate('search.detailSizeLine', locale, { size: formatSize(detail.sizeBytes, locale) })),
+      escapeHtml(translate('search.detailHashLine', locale, { hash: hashValue })),
+      escapeHtml(translate('search.detailExtensionLine', locale, { extension: extensionDisplay })),
+      streamLineText
+    ];
+    const keyboard = buildDownloadConfirmationKeyboard(token, locale);
+    await replyFn(detailLines.join('\n'), { ...keyboard, parse_mode: 'HTML' as const });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    await replyFn(translate('downloads.startFailed', locale, { message }));
+    await replyFn(translate('search.detailFailed', locale, { message }));
   }
 };
 
@@ -554,9 +653,15 @@ bot.start(async (ctx) => {
   if (!chatId) {
     return;
   }
-  const payloadToken = parseDownloadPayload(ctx.startPayload);
+  const payload = normalizeStartPayload(ctx.startPayload);
+  if (payload?.startsWith(STREAM_INFO_PAYLOAD_PREFIX)) {
+    const extensionValue = payload.slice(STREAM_INFO_PAYLOAD_PREFIX.length) || 'unknown';
+    await ctx.reply(translateForChat(chatId, 'search.streamExplanation', { extension: extensionValue }));
+    return;
+  }
+  const payloadToken = parseDetailPayload(payload);
   if (payloadToken) {
-    await startDownloadFromToken(chatId, payloadToken, (text) => ctx.reply(text));
+    await startDownloadFromToken(chatId, payloadToken, (text, extra) => ctx.reply(text, extra));
     return;
   }
   await sendStartMessage(chatId, (text, extra) => ctx.reply(text, extra));
@@ -646,6 +751,67 @@ bot.action(/^page:(\d+)$/, async (ctx) => {
   session.page = pageInfo.page;
   await safeAnswerCallback(ctx);
   await safeEditMessageText(ctx, pageInfo.text, pageInfo.extra);
+});
+
+bot.action(new RegExp(`^${DOWNLOAD_CONFIRM_PREFIX}(.+)$`), async (ctx) => {
+  const match = ctx.match as RegExpExecArray | undefined;
+  const rawToken = match?.[1] ? decodeURIComponent(match[1]) : undefined;
+  const chatId = ctx.chat?.id;
+  if (!chatId || !rawToken) {
+    await safeAnswerCallback(ctx);
+    return;
+  }
+  await safeAnswerCallback(ctx);
+  const locale = getChatLocale(chatId);
+  const parsed = parseDetailToken(rawToken);
+  if (!parsed) {
+    await ctx.reply(translate('search.expired', locale));
+    return;
+  }
+  const storedResult = resolveResultToken(chatId, rawToken);
+  const baseResult = storedResult ?? createPlaceholderResult(parsed.provider, parsed.id);
+  let detail = resolveCachedResultDetail(chatId, rawToken);
+  if (!detail) {
+    try {
+      const fetchedDetail = await downloadService.getSearchResultDetail(baseResult);
+      if (fetchedDetail) {
+        detail = normalizeDetailHash(fetchedDetail);
+        const ensuredResult = storedResult ?? { ...baseResult, title: detail.title ?? baseResult.title };
+        registerResultToken(chatId, rawToken, ensuredResult);
+        cacheResultDetail(chatId, rawToken, detail);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await ctx.reply(translate('search.detailFailed', locale, { message }));
+      return;
+    }
+  }
+  if (!detail) {
+    await ctx.reply(translate('search.detailUnavailable', locale, { provider: baseResult.providerLabel || baseResult.provider, id: baseResult.id }));
+    return;
+  }
+  const clientId = await ensureTelegramClient(chatId);
+  try {
+    const job = await downloadService.startDownload(detail, clientId);
+    await ctx.reply(
+      [
+        translate('downloads.summaryTitle', locale, {
+          title: storedResult?.title ?? detail.title ?? baseResult.title
+        }),
+        translate('job.jobIdLine', locale, { jobId: job.jobId }),
+        translate('job.btihLine', locale, { btih: job.btih }),
+        '',
+        translate('downloads.checkStatusHint', locale)
+      ].join('\n')
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await ctx.reply(translate('downloads.startFailed', locale, { message }));
+  }
+});
+
+bot.action(DOWNLOAD_CANCEL_ACTION, async (ctx) => {
+  await safeAnswerCallback(ctx);
 });
 
 bot.action(/^job:(.+)$/, async (ctx) => {

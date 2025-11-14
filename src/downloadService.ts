@@ -6,6 +6,7 @@ import {
   JobStatus,
   OwnedJob,
   SearchResult,
+  SearchResultDetail,
   SearchResultPipeline,
   StoredJob
 } from './types.js';
@@ -117,14 +118,36 @@ export class DownloadService extends EventEmitter {
   }
 
   async search(query: string): Promise<SearchResult[]> {
-    const results = await this.apiClient.search(query, this.searchLimit);
-    if (this.searchPipeline.length === 0) {
-      return results;
-    }
-    return this.applySearchPipeline(results);
+    const initial = await this.apiClient.search(query);
+    const filtered = this.searchPipeline.length === 0 ? initial : await this.applySearchPipeline(initial);
+    return this.applyLimit(this.cycleProviders(filtered));
   }
 
-  async startDownload(result: SearchResult, clientId?: string): Promise<OwnedJob> {
+  private applyLimit(results: SearchResult[]): SearchResult[] {
+    if (this.searchLimit <= 0) {
+      return results;
+    }
+    return results.slice(0, this.searchLimit);
+  }
+
+  async getSearchResultDetail(result: SearchResult): Promise<SearchResultDetail | undefined> {
+    const detail = await this.apiClient.getSearchResultDetail(result.provider, result.id);
+    if (!detail) {
+      return undefined;
+    }
+    const resolvedTitle = detail.title?.trim().length ? detail.title : result.title;
+    const resolvedSizeBytes = detail.sizeBytes ?? result.sizeBytes ?? null;
+    const normalizedHash = detail.hash && detail.hash.trim().length > 0 ? detail.hash : null;
+    return {
+      ...detail,
+      providerLabel: result.providerLabel,
+      title: resolvedTitle,
+      sizeBytes: resolvedSizeBytes,
+      hash: normalizedHash
+    };
+  }
+
+  async startDownload(result: SearchResultDetail, clientId?: string): Promise<OwnedJob> {
     const owner = this.resolveClientId(clientId);
     try {
       const response = await this.apiClient.createJob(result.magnet, result.title);
@@ -136,7 +159,7 @@ export class DownloadService extends EventEmitter {
         response.createdAt,
         response.statusUpdatedAt,
         response.progress,
-        result.sizeBytes,
+        result.sizeBytes ?? undefined,
         response.error,
         response.shortUrl,
         response.s3ObjectKey
@@ -227,6 +250,41 @@ export class DownloadService extends EventEmitter {
       current = next;
     }
     return current;
+  }
+
+  private cycleProviders(results: SearchResult[]): SearchResult[] {
+    if (results.length === 0) {
+      return results;
+    }
+    const buckets = new Map<string, SearchResult[]>();
+    const order: string[] = [];
+    results.forEach((item) => {
+      const provider = item.provider.toLowerCase();
+      let bucket = buckets.get(provider);
+      if (!bucket) {
+        bucket = [];
+        buckets.set(provider, bucket);
+        order.push(provider);
+      }
+      bucket.push(item);
+    });
+    const output: SearchResult[] = [];
+    let remaining = results.length;
+    while (remaining > 0) {
+      for (const provider of order) {
+        const bucket = buckets.get(provider);
+        if (!bucket || bucket.length === 0) {
+          continue;
+        }
+        const next = bucket.shift();
+        if (!next) {
+          continue;
+        }
+        output.push(next);
+        remaining -= 1;
+      }
+    }
+    return output;
   }
 
   private resolveClientId(clientId?: string): string {

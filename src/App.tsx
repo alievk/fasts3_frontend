@@ -3,7 +3,7 @@ import { Box, Text, useInput, useApp } from 'ink';
 import SelectInput from 'ink-select-input';
 import { useJobs } from './useJobs.js';
 import { useServices } from './serviceContext.js';
-import { OwnedJob, SearchResult } from './types.js';
+import { OwnedJob, SearchResultDetail } from './types.js';
 import { SearchPane } from './SearchPane.js';
 import clipboard from 'clipboardy';
 
@@ -93,7 +93,7 @@ export const App: React.FC = () => {
     pushScreen({ key: 'jobDetail', jobId });
   };
 
-  const handleSelect = async (result: SearchResult) => {
+  const handleDownload = async (result: SearchResultDetail) => {
     if (isStarting) {
       return;
     }
@@ -166,7 +166,7 @@ export const App: React.FC = () => {
         )}
         {currentScreen.key === 'search' && (
           <Box flexDirection="column" flexGrow={1}>
-            <SearchPane onSelect={handleSelect} disabled={!ready || isStarting} />
+            <SearchPane onDownload={handleDownload} disabled={!ready || isStarting} />
             <Text color="gray">Press ← to return to menu.</Text>
           </Box>
         )}

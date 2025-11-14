@@ -1,11 +1,13 @@
 import { Config, SearchResultStage, SearchResultPipeline } from './types.js';
 
+const hasKnownSize = (value: number | null | undefined): value is number => typeof value === 'number' && Number.isFinite(value);
+
 const buildMinSizeStage = (limit: number): SearchResultStage => {
-  return (results) => results.filter((item) => !Number.isFinite(item.sizeBytes) || item.sizeBytes >= limit);
+  return (results) => results.filter((item) => !hasKnownSize(item.sizeBytes) || item.sizeBytes >= limit);
 };
 
 const buildMaxSizeStage = (limit: number): SearchResultStage => {
-  return (results) => results.filter((item) => !Number.isFinite(item.sizeBytes) || item.sizeBytes <= limit);
+  return (results) => results.filter((item) => !hasKnownSize(item.sizeBytes) || item.sizeBytes <= limit);
 };
 
 export const createSearchPipeline = (config: Config): SearchResultPipeline => {

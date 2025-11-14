@@ -2,11 +2,28 @@ export type JobStatus = 'queued' | 'downloading' | 'uploading' | 'completed' | '
 
 export interface SearchResult {
   id: string;
+  provider: string;
+  providerLabel: string;
   title: string;
-  sizeBytes: number;
+  sizeBytes: number | null;
   seeders: number;
   leechers: number;
+}
+
+export interface SearchResultFile {
+  name: string;
+  sizeBytes: number | null;
+}
+
+export interface SearchResultDetail {
+  id: string;
+  provider: string;
+  providerLabel: string;
+  title: string;
+  sizeBytes: number | null;
+  hash?: string | null;
   magnet: string;
+  files: SearchResultFile[];
 }
 
 export type SearchResultStage = (results: SearchResult[]) => SearchResult[] | Promise<SearchResult[]>;
@@ -73,7 +90,8 @@ export interface Config {
 }
 
 export interface ApiClient {
-  search(query: string, limit?: number): Promise<SearchResult[]>;
+  search(query: string): Promise<SearchResult[]>;
+  getSearchResultDetail(provider: string, id: string): Promise<SearchResultDetail | undefined>;
   createJob(magnet: string, label?: string): Promise<CreateJobResponse>;
   getJob(jobId: string): Promise<JobDetail | undefined>;
   deleteJob(jobId: string): Promise<void>;

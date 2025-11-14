@@ -8,8 +8,8 @@ const DEFAULT_API_BASE_URL = 'http://localhost:8000/api';
 const DEFAULT_POLLING_MS = 3000;
 const DEFAULT_SEARCH_LIMIT = 5;
 const DEFAULT_PAGE_SIZE = 5;
-const DEFAULT_MIN_SIZE_GIB = 0.6;
-const DEFAULT_MAX_SIZE_GIB = 5;
+const DEFAULT_MIN_SIZE_GIB = 0;
+const DEFAULT_MAX_SIZE_GIB = Number.POSITIVE_INFINITY;
 const DEFAULT_SEARCH_TIMEOUT_MS = 10000;
 
 const parsePositiveInt = (value: string | undefined): number | undefined => {
@@ -53,11 +53,12 @@ export const loadConfig = (): Config => {
   const basePageSize = parsedPageSize ?? DEFAULT_PAGE_SIZE;
   const searchPageSize = Math.max(1, Math.min(searchLimit, basePageSize));
   const minSizeGiB = parsePositiveFloat(process.env.TORRENT_SEARCH_MIN_SIZE_GIB) ?? DEFAULT_MIN_SIZE_GIB;
-  const maxSizeGiB = parsePositiveFloat(process.env.TORRENT_SEARCH_MAX_SIZE_GIB);
-  const resolvedMaxGiB = maxSizeGiB ?? DEFAULT_MAX_SIZE_GIB;
-  const resolvedMinGiB = Math.min(minSizeGiB, resolvedMaxGiB);
-  const searchMinSizeBytes = Math.floor(resolvedMinGiB * 1024 * 1024 * 1024);
-  const searchMaxSizeBytes = Math.floor(resolvedMaxGiB * 1024 * 1024 * 1024);
+  const maxSizeGiB = parsePositiveFloat(process.env.TORRENT_SEARCH_MAX_SIZE_GIB) ?? DEFAULT_MAX_SIZE_GIB;
+  const resolvedMinGiB = Math.min(minSizeGiB, maxSizeGiB);
+  const searchMinSizeBytes =
+    Number.isFinite(resolvedMinGiB) && resolvedMinGiB > 0 ? Math.floor(resolvedMinGiB * 1024 * 1024 * 1024) : undefined;
+  const searchMaxSizeBytes =
+    Number.isFinite(maxSizeGiB) && maxSizeGiB > 0 ? Math.floor(maxSizeGiB * 1024 * 1024 * 1024) : undefined;
   const searchRequestTimeoutMs = parsePositiveInt(process.env.TORRENT_SEARCH_REQUEST_TIMEOUT_MS) ?? DEFAULT_SEARCH_TIMEOUT_MS;
   const playerBaseUrl = process.env.PLAYER_BASE_URL;
   if (!playerBaseUrl) {
