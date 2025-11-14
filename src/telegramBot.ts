@@ -119,7 +119,7 @@ const searchPageSize = config.searchPageSize;
 const DETAIL_PAYLOAD_PREFIX = 'details_';
 const DOWNLOAD_CONFIRM_PREFIX = 'confirm:';
 const DOWNLOAD_CANCEL_ACTION = 'dismiss-detail';
-const STREAM_INFO_PAYLOAD_PREFIX = 'streamhelp:';
+const STREAM_INFO_PAYLOAD_PREFIX = 'streamhelp_';
 
 const normalizeShortUrl = (value?: string | null): string | null => {
   const trimmed = value?.trim();
