@@ -11,7 +11,7 @@ Compact reference for the orchestrator REST API. All responses are JSON unless n
 | Method | Path | Auth | Notes |
 | --- | --- | --- | --- |
 | GET | `/api/health` | Yes | Connectivity & version. |
-| GET | `/api/search` | Yes | Torrent lookup. |
+| GET | `/api/search/{title_or_id}/{provider}` | Yes | Torrent lookup (proxied to TorAPI). |
 | POST | `/api/jobs` | Yes | Create download job. |
 | GET | `/api/jobs/{job_id}` | No | Job status (single job only). |
 | GET | `/api/jobs/{job_id}/presign_link` | Yes | Returns S3 link once job completed. |
@@ -30,24 +30,14 @@ Response `200`:
 `version` is `Settings.app_version`.
 
 ### Search
-`GET /api/search?query=<text>&limit=<1-100>`
+`GET /api/search/<TITLE_OR_ID>/<PROVIDER_OR_ALL>?page=<0-20>&year=<YYYY>`
 
-- `query` trimmed, 1–256 chars.
-- `limit` default 5.
-- Validation errors surface as FastAPI `422` responses.
+- Path parameters mirror the upstream TorAPI format, so pass the literal title/ID plus provider (`ALL` for broadcast).
+- Optional query parameters such as `page` and `year` are forwarded unchanged.
+- The orchestrator simply proxies this request to `{SEARCH_SERVICE_URL}/api/search/...`
+  (where `SEARCH_SERVICE_URL` is the base host without the `/api` suffix).
 
-Response `200`: array of `SearchItem` objects:
-```json
-{
-  "id": "rutracker-123456",
-  "title": "Ubuntu 24.04",
-  "size_bytes": 3512729600,
-  "seeders": 1520,
-  "leechers": 90,
-  "magnet": "magnet:?xt=urn:btih:..."
-}
-```
-Empty array when nothing matches.
+Response `200`: JSON payload from TorAPI (array of torrent records). Non-200 responses are surfaced with the upstream status code and either its error payload or a generic `search_unavailable`.
 
 ### Create Job
 `POST /api/jobs`
