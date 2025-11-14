@@ -188,7 +188,9 @@ export class DownloadService extends EventEmitter {
   }
 
   async syncAll(): Promise<void> {
-    const jobsToSync = this.getJobs().filter((job) => job.lastKnownStatus !== 'completed');
+    const jobsToSync = this.getJobs().filter(
+      (job) => job.lastKnownStatus !== 'completed' && job.lastKnownStatus !== 'error'
+    );
     if (jobsToSync.length === 0) {
       return;
     }
