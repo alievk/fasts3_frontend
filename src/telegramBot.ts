@@ -109,9 +109,8 @@ const botCommands = [
 
 const activeChats = new Set<number>();
 
-type SearchResultWithToken = SearchResult & { token: string };
 type SearchSession = {
-  results: SearchResultWithToken[];
+  results: SearchResult[];
   page: number;
   messageId?: number;
 };
@@ -121,23 +120,13 @@ const DETAIL_PAYLOAD_PREFIX = 'details_';
 const DOWNLOAD_CONFIRM_PREFIX = 'confirm:';
 const DOWNLOAD_CANCEL_ACTION = 'dismiss-detail';
 const STREAM_INFO_PAYLOAD_PREFIX = 'streamhelp:';
-const MAX_RESULT_TOKENS = 500;
-
-type ResultTokenRecord = {
-  chatId: number;
-  result: SearchResult;
-};
-
-const resultTokenStore = new Map<string, ResultTokenRecord>();
-const resultTokenOrder: string[] = [];
-const resultDetailCache = new Map<string, SearchResultDetail>();
 
 const normalizeShortUrl = (value?: string | null): string | null => {
   const trimmed = value?.trim();
   return trimmed && trimmed.length > 0 ? trimmed : null;
 };
 
-const resolveResultTokenValue = (result: SearchResult): string => `${result.provider.toLowerCase()}_${result.id}`;
+const encodeResultToken = (result: SearchResult): string => `${result.provider.toLowerCase()}_${result.id}`;
 
 const parseDetailToken = (token: string | undefined | null): { provider: string; id: string } | null => {
   if (!token) {
@@ -154,59 +143,6 @@ const parseDetailToken = (token: string | undefined | null): { provider: string;
   return { provider: provider.toLowerCase(), id };
 };
 
-const buildResultTokenKey = (chatId: number, token: string): string => `${chatId}:${token}`;
-
-const cacheResultDetail = (chatId: number, token: string, detail: SearchResultDetail): void => {
-  resultDetailCache.set(buildResultTokenKey(chatId, token), detail);
-};
-
-const resolveCachedResultDetail = (chatId: number, token: string): SearchResultDetail | undefined =>
-  resultDetailCache.get(buildResultTokenKey(chatId, token));
-
-const removeResultTokenKey = (key: string): void => {
-  const index = resultTokenOrder.indexOf(key);
-  if (index >= 0) {
-    resultTokenOrder.splice(index, 1);
-  }
-  resultDetailCache.delete(key);
-};
-
-const pruneResultTokens = (): void => {
-  while (resultTokenOrder.length > MAX_RESULT_TOKENS) {
-    const oldest = resultTokenOrder.shift();
-    if (!oldest) {
-      break;
-    }
-    resultTokenStore.delete(oldest);
-    resultDetailCache.delete(oldest);
-  }
-};
-
-const registerResultToken = (chatId: number, token: string, result: SearchResult): void => {
-  const key = buildResultTokenKey(chatId, token);
-  removeResultTokenKey(key);
-  resultTokenStore.set(key, { chatId, result });
-  resultTokenOrder.push(key);
-  pruneResultTokens();
-};
-
-const storeResultToken = (chatId: number, result: SearchResult): string => {
-  const token = resolveResultTokenValue(result);
-  registerResultToken(chatId, token, result);
-  return token;
-};
-
-const attachResultTokens = (chatId: number, results: SearchResult[]): SearchResultWithToken[] =>
-  results.map((result) => ({ ...result, token: storeResultToken(chatId, result) }));
-
-const resolveResultToken = (chatId: number, token: string): SearchResult | null => {
-  const record = resultTokenStore.get(buildResultTokenKey(chatId, token));
-  if (!record || record.chatId !== chatId) {
-    return null;
-  }
-  return record.result;
-};
-
 const createPlaceholderResult = (provider: string, id: string): SearchResult => ({
   id,
   provider,
@@ -217,30 +153,10 @@ const createPlaceholderResult = (provider: string, id: string): SearchResult => 
   leechers: 0
 });
 
-type ConversationState =
-  | {
-      type: 'search';
-      stage: 'awaitingQuery';
-    };
-
 const searchSessions = new Map<number, SearchSession>();
-const conversationStates = new Map<number, ConversationState>();
+const awaitingSearchQuery = new Set<number>();
 const trackedJobs = new Map<string, OwnedJob>();
 const removalSuppressions = new Map<string, string>();
-const setConversationState = (chatId: number, state: ConversationState) => {
-  conversationStates.set(chatId, state);
-};
-const clearConversationState = (chatId: number, type?: ConversationState['type']) => {
-  const existing = conversationStates.get(chatId);
-  if (!existing) {
-    return;
-  }
-  if (type && existing.type !== type) {
-    return;
-  }
-  conversationStates.delete(chatId);
-};
-const getConversationState = (chatId: number): ConversationState | undefined => conversationStates.get(chatId);
 
 const buildTelegramClientId = (chatId: number): string => `telegram:${chatId}`;
 
@@ -281,6 +197,19 @@ const ensureBootstrapped = (): Promise<void> => {
   return bootstrapPromise;
 };
 
+type TelegramErrorResponse = {
+  error_code?: number;
+  description?: string;
+};
+
+const getTelegramErrorResponse = (error: unknown): TelegramErrorResponse | null => {
+  if (!error || typeof error !== 'object') {
+    return null;
+  }
+  const response = (error as { response?: TelegramErrorResponse }).response;
+  return response ?? null;
+};
+
 const sendTelegramMessage = async (
   chatId: number,
   message: string,
@@ -289,8 +218,8 @@ const sendTelegramMessage = async (
   try {
     await bot.telegram.sendMessage(chatId, message, extra);
   } catch (error) {
-    const code = (error as { response?: { error_code?: number } }).response?.error_code;
-    if (code === 403) {
+    const response = getTelegramErrorResponse(error);
+    if (response?.error_code === 403) {
       activeChats.delete(chatId);
     }
     console.error(`Failed to deliver message to ${chatId}:`, error);
@@ -332,18 +261,12 @@ const notifyJobOwner = async (job: OwnedJob, message: MessageBuilder): Promise<v
 };
 
 const isQueryTooOldError = (error: unknown): boolean => {
-  if (!error || typeof error !== 'object') {
-    return false;
-  }
-  const response = (error as { response?: { error_code?: number; description?: string } }).response;
+  const response = getTelegramErrorResponse(error);
   return response?.error_code === 400 && typeof response.description === 'string' && response.description.includes('query is too old');
 };
 
 const isMessageUnchangedError = (error: unknown): boolean => {
-  if (!error || typeof error !== 'object') {
-    return false;
-  }
-  const response = (error as { response?: { error_code?: number; description?: string } }).response;
+  const response = getTelegramErrorResponse(error);
   return response?.error_code === 400 && typeof response.description === 'string' && response.description.includes('message is not modified');
 };
 
@@ -374,10 +297,7 @@ const safeEditMessageText = async (
 };
 
 const isDeleteMessageErrorIgnorable = (error: unknown): boolean => {
-  if (!error || typeof error !== 'object') {
-    return false;
-  }
-  const description = (error as { response?: { description?: string } }).response?.description ?? '';
+  const description = getTelegramErrorResponse(error)?.description ?? '';
   if (!description) {
     return false;
   }
@@ -451,7 +371,6 @@ const formatJobDetail = (job: OwnedJob, locale: string): string => {
   return [translate('job.titleLine', locale, { title: job.label ?? job.btih }), ...formatJobInfoLines(job, locale)].join('\n');
 };
 
-const normalizeTitle = (title: string): string => title;
 const escapeHtml = (value: string): string => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const buildStartLink = (payload: string): string => {
   const username = getBotUsername();
@@ -492,6 +411,22 @@ const getLargestFileExtension = (detail: SearchResultDetail): string | null => {
   const cleaned = match[1].toLowerCase().replace(/^\./, '');
   return cleaned.length > 0 ? cleaned : null;
 };
+
+const resolveStreamability = (detail: SearchResultDetail, locale: string, fallbackTitle: string) => {
+  const rawExtension = getLargestFileExtension(detail);
+  const normalizedExt = rawExtension?.toLowerCase();
+  let canStream = normalizedExt === 'mp4';
+  if (!canStream && (!rawExtension || detail.files.length === 0)) {
+    const titleLookup = (detail.title ?? fallbackTitle).toLowerCase();
+    if (titleLookup.includes('mp4')) {
+      canStream = true;
+    }
+  }
+  const extensionValue = rawExtension ?? 'unknown';
+  const extensionDisplay = rawExtension ?? translate('common.unknown', locale);
+  return { canStream, extensionValue, extensionDisplay };
+};
+
 const formatDownloadLinkLine = (token: string, locale: string): string => {
   const payload = `${DETAIL_PAYLOAD_PREFIX}${token}`;
   const label = translate('search.downloadLinkLabel', locale);
@@ -506,7 +441,7 @@ const parseDetailPayload = (payload?: string | null): string | null => {
   return token || null;
 };
 
-const buildSearchPage = (results: SearchResultWithToken[], requestedPage: number, locale: string) => {
+const buildSearchPage = (results: SearchResult[], requestedPage: number, locale: string) => {
   const totalPages = Math.max(1, Math.ceil(results.length / searchPageSize));
   const page = Math.min(Math.max(requestedPage, 0), totalPages - 1);
   const startIndex = page * searchPageSize;
@@ -515,11 +450,11 @@ const buildSearchPage = (results: SearchResultWithToken[], requestedPage: number
     const index = startIndex + offset;
     const displayIndex = index + 1;
     return [
-      `${displayIndex}. ${escapeHtml(normalizeTitle(result.title))}`,
+      `${displayIndex}. ${escapeHtml(result.title)}`,
       escapeHtml(translate('search.providerLine', locale, { provider: result.providerLabel || result.provider })),
       escapeHtml(translate('search.sizeLine', locale, { size: formatSize(result.sizeBytes, locale) })),
       escapeHtml(translate('search.peersLine', locale, { seeders: result.seeders, leechers: result.leechers })),
-      formatDownloadLinkLine(result.token, locale)
+      formatDownloadLinkLine(encodeResultToken(result), locale)
     ].join('\n');
   });
   const navButtons: ReturnType<typeof Markup.button.callback>[] = [];
@@ -558,40 +493,30 @@ const startDownloadFromToken = async (
     await replyFn(translate('search.expired', locale));
     return;
   }
-  const stored = token ? resolveResultToken(chatId, token) : null;
-  const baseResult = stored ?? createPlaceholderResult(parsed.provider, parsed.id);
-  try {
-    const fetchedDetail = await downloadService.getSearchResultDetail(baseResult);
-    if (!fetchedDetail) {
-      await replyFn(translate('search.detailUnavailable', locale, { provider: baseResult.providerLabel || baseResult.provider, id: baseResult.id }));
-      return;
-    }
-    const detail = normalizeDetailHash(fetchedDetail);
-    const ensuredResult = stored ?? { ...baseResult, title: detail.title ?? baseResult.title };
-    registerResultToken(chatId, token, ensuredResult);
-    cacheResultDetail(chatId, token, detail);
-    const rawExtension = getLargestFileExtension(detail);
-    const normalizedExt = rawExtension?.toLowerCase();
-    let canStream = normalizedExt === 'mp4';
-    if (!canStream && (!rawExtension || detail.files.length === 0)) {
-      const titleLookup = (detail.title ?? ensuredResult.title ?? '').toLowerCase();
-      if (titleLookup.includes('mp4')) {
-        canStream = true;
-      }
-    }
-    const extensionValue = rawExtension ?? 'unknown';
-    const extensionDisplay = rawExtension ?? translate('common.unknown', locale);
-    const streamOption = translate(canStream ? 'common.yes' : 'common.no', locale);
+	  const baseResult = createPlaceholderResult(parsed.provider, parsed.id);
+	  try {
+	    const fetchedDetail = await downloadService.getSearchResultDetail(baseResult);
+	    if (!fetchedDetail) {
+	      await replyFn(translate('search.detailUnavailable', locale, { provider: baseResult.providerLabel || baseResult.provider, id: baseResult.id }));
+	      return;
+	    }
+	    const detail = normalizeDetailHash(fetchedDetail);
+	    const { canStream, extensionValue, extensionDisplay } = resolveStreamability(
+	      detail,
+	      locale,
+	      baseResult.title
+	    );
+	    const streamOption = translate(canStream ? 'common.yes' : 'common.no', locale);
     const streamLineBase = translate('search.detailStreamLine', locale, { option: streamOption });
     const streamLineText = canStream
       ? escapeHtml(streamLineBase)
       : `${escapeHtml(streamLineBase)} (<a href="${escapeHtml(buildStartLink(`${STREAM_INFO_PAYLOAD_PREFIX}${extensionValue}`))}">${escapeHtml(translate('search.streamWhy', locale))}</a>)`;
     const hashValue = detail.hash ?? translate('common.unknown', locale);
-    const displayTitle = ensuredResult.title ?? detail.title ?? baseResult.title;
+    const displayTitle = detail.title ?? baseResult.title;
     const detailLines = [
       escapeHtml(translate('search.detailTitleLine', locale, { title: displayTitle })),
-      escapeHtml(translate('search.detailProviderLine', locale, { provider: ensuredResult.providerLabel || ensuredResult.provider })),
-      escapeHtml(translate('search.detailIdLine', locale, { id: ensuredResult.id })),
+      escapeHtml(translate('search.detailProviderLine', locale, { provider: baseResult.providerLabel || baseResult.provider })),
+      escapeHtml(translate('search.detailIdLine', locale, { id: baseResult.id })),
       escapeHtml(translate('search.detailSizeLine', locale, { size: formatSize(detail.sizeBytes, locale) })),
       escapeHtml(translate('search.detailHashLine', locale, { hash: hashValue })),
       escapeHtml(translate('search.detailExtensionLine', locale, { extension: extensionDisplay })),
@@ -620,7 +545,7 @@ const buildJobsKeyboard = (jobs: OwnedJob[], locale: string) => {
   const buttons = jobs.map((job) =>
     Markup.button.callback(
       translate('jobs.listButton', locale, {
-        title: normalizeTitle(job.label ?? job.btih),
+        title: job.label ?? job.btih,
         status: formatStatus(job.lastKnownStatus, locale)
       }),
       `job:${encodeURIComponent(job.jobId)}`
@@ -672,7 +597,7 @@ bot.command('search', async (ctx) => {
   if (!chatId) {
     return;
   }
-  setConversationState(chatId, { type: 'search', stage: 'awaitingQuery' });
+  awaitingSearchQuery.add(chatId);
   await ctx.reply(translateForChat(chatId, 'search.prompt'));
 });
 
@@ -692,8 +617,7 @@ bot.on('message', async (ctx, next) => {
   if (isCommand) {
     return next();
   }
-  const state = getConversationState(chatId);
-  if (!state || state.type !== 'search' || state.stage !== 'awaitingQuery') {
+  if (!awaitingSearchQuery.has(chatId)) {
     return next();
   }
   const query = text.trim();
@@ -701,19 +625,18 @@ bot.on('message', async (ctx, next) => {
     await ctx.reply(translateForChat(chatId, 'search.prompt'));
     return;
   }
-  clearConversationState(chatId, 'search');
+  awaitingSearchQuery.delete(chatId);
   try {
     const rawResults = await downloadService.search(query);
     if (rawResults.length === 0) {
       await ctx.reply(translateForChat(chatId, 'search.noResults', { query }));
       return;
     }
-    const results = attachResultTokens(chatId, rawResults);
     const locale = getChatLocale(chatId);
-    const pageInfo = buildSearchPage(results, 0, locale);
+    const pageInfo = buildSearchPage(rawResults, 0, locale);
     const previousMessageId = searchSessions.get(chatId)?.messageId;
     const sentMessage = await ctx.reply(pageInfo.text, pageInfo.extra);
-    searchSessions.set(chatId, { results, page: pageInfo.page, messageId: sentMessage.message_id });
+    searchSessions.set(chatId, { results: rawResults, page: pageInfo.page, messageId: sentMessage.message_id });
     if (previousMessageId !== undefined) {
       await deleteSearchMessage(chatId, previousMessageId);
     }
@@ -768,23 +691,17 @@ bot.action(new RegExp(`^${DOWNLOAD_CONFIRM_PREFIX}(.+)$`), async (ctx) => {
     await ctx.reply(translate('search.expired', locale));
     return;
   }
-  const storedResult = resolveResultToken(chatId, rawToken);
-  const baseResult = storedResult ?? createPlaceholderResult(parsed.provider, parsed.id);
-  let detail = resolveCachedResultDetail(chatId, rawToken);
-  if (!detail) {
-    try {
-      const fetchedDetail = await downloadService.getSearchResultDetail(baseResult);
-      if (fetchedDetail) {
-        detail = normalizeDetailHash(fetchedDetail);
-        const ensuredResult = storedResult ?? { ...baseResult, title: detail.title ?? baseResult.title };
-        registerResultToken(chatId, rawToken, ensuredResult);
-        cacheResultDetail(chatId, rawToken, detail);
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      await ctx.reply(translate('search.detailFailed', locale, { message }));
-      return;
+  const baseResult = createPlaceholderResult(parsed.provider, parsed.id);
+  let detail: SearchResultDetail | undefined;
+  try {
+    const fetchedDetail = await downloadService.getSearchResultDetail(baseResult);
+    if (fetchedDetail) {
+      detail = normalizeDetailHash(fetchedDetail);
     }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await ctx.reply(translate('search.detailFailed', locale, { message }));
+    return;
   }
   if (!detail) {
     await ctx.reply(translate('search.detailUnavailable', locale, { provider: baseResult.providerLabel || baseResult.provider, id: baseResult.id }));
@@ -796,7 +713,7 @@ bot.action(new RegExp(`^${DOWNLOAD_CONFIRM_PREFIX}(.+)$`), async (ctx) => {
     await ctx.reply(
       [
         translate('downloads.summaryTitle', locale, {
-          title: storedResult?.title ?? detail.title ?? baseResult.title
+          title: detail.title ?? baseResult.title
         }),
         translate('job.jobIdLine', locale, { jobId: job.jobId }),
         translate('job.btihLine', locale, { btih: job.btih }),
