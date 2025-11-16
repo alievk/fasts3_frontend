@@ -615,7 +615,7 @@ const sendJobList = async (chatId: number, clientId: string) => {
     const title = job.label ?? job.hash;
     const statusText = formatStatus(job.lastKnownStatus, locale);
     const link = `<a href="${escapeHtml(buildStartLink(`${JOB_PAYLOAD_PREFIX}${job.jobId}`))}">${openLabel}</a>`;
-    return `${index + 1}. ${escapeHtml(title)} - ${escapeHtml(statusText)} - ${link}`;
+    return `${index + 1}. ${escapeHtml(title)} - <b>${escapeHtml(statusText)}</b> - ${link}`;
   });
   const text = lines.join('\n\n');
   await sendTelegramMessage(chatId, text, { parse_mode: 'HTML' as const });
