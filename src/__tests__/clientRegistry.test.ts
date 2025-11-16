@@ -9,7 +9,7 @@ import { StoredJob } from '../types.js';
 
 const baseJob = (): StoredJob => ({
   jobId: 'job-1',
-  btih: 'btih-1',
+  hash: 'hash-1',
   createdAt: new Date().toISOString(),
   lastKnownStatus: 'queued',
   lastSyncedAt: new Date().toISOString(),

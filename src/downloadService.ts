@@ -10,6 +10,7 @@ import {
   SearchResultPipeline,
   StoredJob
 } from './types.js';
+import { extractHashFromMagnet, normalizeHash } from './hashUtils.js';
 
 type DownloadServiceEvents = {
   jobUpdated: (job: OwnedJob) => void;
@@ -50,7 +51,7 @@ const resolveTorrentSizeBytes = (result: SearchResult, detail: SearchResultDetai
 
 const mapDetailToStored = (detail: JobDetail, existing?: StoredJob): StoredJob => ({
   jobId: detail.jobId,
-  btih: detail.btih,
+  hash: detail.hash,
   label: detail.label ?? existing?.label ?? null,
   createdAt: existing?.createdAt ?? detail.statusUpdatedAt ?? new Date().toISOString(),
   lastKnownStatus: detail.status,
@@ -65,7 +66,7 @@ const mapDetailToStored = (detail: JobDetail, existing?: StoredJob): StoredJob =
 
 const newStoredJob = (
   jobId: string,
-  btih: string,
+  hash: string,
   label: string | undefined,
   status: JobStatus,
   createdAt: string,
@@ -77,7 +78,7 @@ const newStoredJob = (
   s3ObjectKey: string | null
 ): StoredJob => ({
   jobId,
-  btih,
+  hash,
   label: label ?? null,
   createdAt,
   lastKnownStatus: status,
@@ -167,7 +168,7 @@ export class DownloadService extends EventEmitter {
     }
     const resolvedTitle = resolveTorrentTitle(result, detail);
     const resolvedSizeBytes = resolveTorrentSizeBytes(result, detail);
-    const normalizedHash = detail.hash && detail.hash.trim().length > 0 ? detail.hash : null;
+    const normalizedHash = normalizeHash(detail.hash ?? null);
     return {
       ...detail,
       providerLabel: result.providerLabel,
@@ -180,10 +181,30 @@ export class DownloadService extends EventEmitter {
   async startDownload(result: SearchResultDetail, clientId?: string): Promise<OwnedJob> {
     const owner = this.resolveClientId(clientId);
     try {
+      const canonicalHash =
+        normalizeHash(result.hash ?? null) ?? extractHashFromMagnet(result.magnet);
+
+      if (canonicalHash) {
+        const existingJobs = this.getJobsForClient(owner).filter((job) =>
+          normalizeHash(job.hash) === canonicalHash
+        );
+        if (existingJobs.length > 0) {
+          const completedJobs = existingJobs.filter((job) => job.lastKnownStatus === 'completed');
+          const candidates = completedJobs.length > 0 ? completedJobs : existingJobs;
+          const best = candidates.reduce((latest, job) =>
+            job.createdAt.localeCompare(latest.createdAt) > 0 ? job : latest
+          );
+          await this.syncJob(best.jobId);
+          const refreshed =
+            this.jobs.get(best.jobId) ?? (await this.clientRegistry.getJob(best.jobId)) ?? best;
+          return refreshed;
+        }
+      }
+
       const response = await this.apiClient.createJob(result.magnet, result.title);
       const stored = newStoredJob(
         response.jobId,
-        response.btih,
+        response.hash,
         result.title,
         response.status,
         response.createdAt,

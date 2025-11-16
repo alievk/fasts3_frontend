@@ -6,6 +6,7 @@ import { createApiClient } from './apiClient.js';
 import { DownloadService } from './downloadService.js';
 import { Poller } from './poller.js';
 import { JobStatus, OwnedJob, SearchResult, SearchResultDetail } from './types.js';
+import { normalizeHash } from './hashUtils.js';
 import { createSearchPipeline } from './searchPipeline.js';
 import { createClientRegistry } from './clientRegistry.js';
 import botTranslationsData from './locales/bot.json' with { type: 'json' };
@@ -236,6 +237,9 @@ const sendTelegramMessage = async (
 };
 
 type MessageBuilder = string | ((chatId: number) => string);
+type MessageExtraBuilder =
+  | SendMessageExtra
+  | ((chatId: number) => SendMessageExtra | undefined);
 
 const broadcast = async (message: MessageBuilder, options?: { excludeChatId?: number }) => {
   const excludeChatId = options?.excludeChatId;
@@ -253,7 +257,11 @@ const broadcast = async (message: MessageBuilder, options?: { excludeChatId?: nu
   );
 };
 
-const notifyJobOwner = async (job: OwnedJob, message: MessageBuilder): Promise<void> => {
+const notifyJobOwner = async (
+  job: OwnedJob,
+  message: MessageBuilder,
+  extra?: MessageExtraBuilder
+): Promise<void> => {
   const targets = await clientRegistry.getNotificationTargets(job.jobId);
   if (targets.length === 0) {
     return;
@@ -261,9 +269,12 @@ const notifyJobOwner = async (job: OwnedJob, message: MessageBuilder): Promise<v
   await Promise.all(
     targets.map(async (target) => {
       if (target.transport.type === 'telegram') {
-        cacheChatLocale(target.transport.chatId, target.locale ?? null);
-        const text = typeof message === 'function' ? message(target.transport.chatId) : message;
-        await sendTelegramMessage(target.transport.chatId, text);
+        const chatId = target.transport.chatId;
+        cacheChatLocale(chatId, target.locale ?? null);
+        const text = typeof message === 'function' ? message(chatId) : message;
+        const extraValue =
+          typeof extra === 'function' ? extra(chatId) : extra;
+        await sendTelegramMessage(chatId, text, extraValue);
       }
     })
   );
@@ -365,7 +376,7 @@ const formatJobInfoLines = (job: OwnedJob, locale: string): string[] => {
         : `${Math.round(job.progress * 100)}%`;
   const lines = [
     translate('job.jobIdLine', locale, { jobId: job.jobId }),
-    translate('job.btihLine', locale, { btih: job.btih }),
+    translate('job.hashLine', locale, { hash: job.hash }),
     translate('job.statusLine', locale, { status: formatStatus(job.lastKnownStatus, locale) }),
     translate('job.progressLine', locale, { progress: progressText }),
     translate('job.sizeLine', locale, { size: formatSize(job.sizeBytes ?? null, locale) }),
@@ -377,7 +388,7 @@ const formatJobInfoLines = (job: OwnedJob, locale: string): string[] => {
 };
 
 const formatJobDetail = (job: OwnedJob, locale: string): string => {
-  return [translate('job.titleLine', locale, { title: job.label ?? job.btih }), ...formatJobInfoLines(job, locale)].join('\n');
+  return [translate('job.titleLine', locale, { title: job.label ?? job.hash }), ...formatJobInfoLines(job, locale)].join('\n');
 };
 
 const escapeHtml = (value: string): string => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -583,7 +594,7 @@ const sendJobList = async (chatId: number, clientId: string) => {
   }
   const openLabel = escapeHtml(translate('search.downloadLinkLabel', locale));
   const lines = jobs.map((job, index) => {
-    const title = job.label ?? job.btih;
+    const title = job.label ?? job.hash;
     const statusText = formatStatus(job.lastKnownStatus, locale);
     const link = `<a href="${escapeHtml(buildStartLink(`${JOB_PAYLOAD_PREFIX}${job.jobId}`))}">${openLabel}</a>`;
     return `${index + 1}. ${escapeHtml(title)} - ${escapeHtml(statusText)} - ${link}`;
@@ -742,17 +753,31 @@ bot.action(new RegExp(`^${DOWNLOAD_CONFIRM_PREFIX}(.+)$`), async (ctx) => {
   }
   const clientId = await ensureTelegramClient(chatId);
   try {
+    const existingJobs = downloadService.getJobsForClient(clientId);
+    const knownJobIds = new Set(existingJobs.map((job) => job.jobId));
     const job = await downloadService.startDownload(detail, clientId);
+    const isExistingJob = knownJobIds.has(job.jobId);
+
+    if (isExistingJob) {
+      await ctx.reply(formatJobDetail(job, locale), buildJobActionsKeyboard(job, locale));
+      return;
+    }
+
+    if (job.lastKnownStatus === 'completed') {
+      // Case 2: instantly completed job; rely on completion notification.
+      return;
+    }
+
     const titleLine = escapeHtml(
       translate('downloads.summaryTitle', locale, {
         title: detail.title ?? baseResult.title
       })
     );
     const jobIdLine = escapeHtml(translate('job.jobIdLine', locale, { jobId: job.jobId }));
-    const btihLine = escapeHtml(translate('job.btihLine', locale, { btih: job.btih }));
+    const hashLine = escapeHtml(translate('job.hashLine', locale, { hash: job.hash }));
     const statusLabel = escapeHtml(translate('downloads.checkStatusHint', locale));
     const statusLink = `<a href="${escapeHtml(buildStartLink(`${JOB_PAYLOAD_PREFIX}${job.jobId}`))}">${statusLabel}</a>`;
-    await ctx.reply([titleLine, jobIdLine, btihLine, '', statusLink].join('\n'), {
+    await ctx.reply([titleLine, jobIdLine, hashLine, '', statusLink].join('\n'), {
       parse_mode: 'HTML' as const
     });
   } catch (error) {
@@ -856,24 +881,25 @@ downloadService.on('ready', (jobs) => {
 
 downloadService.on('jobUpdated', (job) => {
   const previous = trackedJobs.get(job.jobId);
-  const statusChanged = !previous || previous.lastKnownStatus !== job.lastKnownStatus;
-  const previousLink = previous ? normalizeShortUrl(previous.shortUrl ?? null) : null;
-  const currentLink = normalizeShortUrl(job.shortUrl ?? null);
-  const linkReady = !previousLink && !!currentLink;
   trackedJobs.set(job.jobId, job);
-  if (job.lastKnownStatus !== 'completed' || !currentLink) {
+  const firstSeenCompleted = !previous && job.lastKnownStatus === 'completed';
+  const transitionedToCompleted =
+    !!previous && previous.lastKnownStatus !== 'completed' && job.lastKnownStatus === 'completed';
+  if (!firstSeenCompleted && !transitionedToCompleted) {
     return;
   }
-  if (!statusChanged && !linkReady) {
-    return;
-  }
-  void notifyJobOwner(job, (chatId) => {
-    const locale = getChatLocale(chatId);
-    return [
-      translate('notifications.jobCompleted', locale, { label: job.label ?? job.btih }),
-      ...formatJobInfoLines(job, locale)
-    ].join('\n');
-  });
+  void notifyJobOwner(
+    job,
+    (chatId) => {
+      const locale = getChatLocale(chatId);
+      const title = job.label ?? job.hash;
+      const openLabel = translate('search.downloadLinkLabel', locale);
+      const linkUrl = buildStartLink(`${JOB_PAYLOAD_PREFIX}${job.jobId}`);
+      const linkHtml = `<a href="${escapeHtml(linkUrl)}">${escapeHtml(openLabel)}</a>`;
+      return translate('notifications.jobCompleted', locale, { title, link: linkHtml });
+    },
+    () => ({ parse_mode: 'HTML' as const })
+  );
 });
 
 downloadService.on('jobRemoved', (job) => {

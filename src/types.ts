@@ -32,7 +32,7 @@ export type SearchResultPipeline = SearchResultStage[];
 
 export interface JobDetail {
   jobId: string;
-  btih: string;
+  hash: string;
   status: JobStatus;
   progress: number | null;
   sizeBytes?: number | null;
@@ -50,7 +50,7 @@ export interface HealthResponse {
 
 export interface StoredJob {
   jobId: string;
-  btih: string;
+  hash: string;
   label?: string | null;
   createdAt: string;
   lastKnownStatus: JobStatus;
@@ -65,7 +65,7 @@ export interface StoredJob {
 
 export interface CreateJobResponse {
   jobId: string;
-  btih: string;
+  hash: string;
   status: JobStatus;
   createdAt: string;
   statusUpdatedAt: string;

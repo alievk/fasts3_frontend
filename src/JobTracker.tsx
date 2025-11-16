@@ -62,7 +62,7 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ jobs, onRemove, disabled
         const isSelected = index === selectedIndex && !disabled;
         const status = job.lastKnownStatus;
         const progress = formatProgress(job.progress, status);
-        const line = `${status.padEnd(11)} ${progress.padEnd(5)} ${job.label ?? job.btih}`;
+        const line = `${status.padEnd(11)} ${progress.padEnd(5)} ${job.label ?? job.hash}`;
         const normalizedLink = job.shortUrl?.trim();
         const link = normalizedLink && normalizedLink.length > 0 ? normalizedLink : null;
         return (

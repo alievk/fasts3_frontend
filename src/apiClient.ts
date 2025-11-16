@@ -8,6 +8,7 @@ import {
   SearchResultDetail,
   SearchResultFile
 } from './types.js';
+import { normalizeHash } from './hashUtils.js';
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 10000;
 const DEFAULT_SEARCH_PAGE = '0';
@@ -259,7 +260,7 @@ class HttpApiClient implements ApiClient {
 
     return {
       jobId: payload.job_id,
-      btih: payload.btih,
+      hash: normalizeHash(payload.btih) ?? payload.btih.toLowerCase(),
       status: this.normalizeStatus(payload.status),
       createdAt: payload.status_updated_at ?? new Date().toISOString(),
       statusUpdatedAt: payload.status_updated_at,
@@ -283,7 +284,7 @@ class HttpApiClient implements ApiClient {
 
     return {
       jobId: result.job_id,
-      btih: result.btih,
+      hash: normalizeHash(result.btih) ?? result.btih.toLowerCase(),
       status: this.normalizeStatus(result.status),
       progress: result.progress ?? null,
       sizeBytes: result.size_bytes ?? null,

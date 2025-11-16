@@ -102,7 +102,7 @@ export const App: React.FC = () => {
     setActionError(undefined);
     try {
       const job = await downloadService.startDownload(result);
-      setInfoMessage(`Started download: ${job.label ?? job.btih}`);
+      setInfoMessage(`Started download: ${job.label ?? job.hash}`);
       clearError();
       setNavigation({
         history: [
@@ -259,7 +259,7 @@ const JobsScreen: React.FC<JobsScreenProps> = ({ jobs, focus, onSelect }) => {
   const items = useMemo(
     () =>
       jobs.map((job) => ({
-        label: `${job.label ?? job.btih} — ${job.lastKnownStatus}${
+        label: `${job.label ?? job.hash} — ${job.lastKnownStatus}${
           job.progress !== null ? ` (${Math.round(job.progress * 100)}%)` : ''
         }`,
         value: job.jobId
@@ -348,10 +348,10 @@ const JobDetailScreen: React.FC<JobDetailScreenProps> = ({ job, focus, onBack, o
 
   return (
     <Box flexDirection="column">
-      <Text>{job.label ?? job.btih}</Text>
+      <Text>{job.label ?? job.hash}</Text>
       <Text>Status: {job.lastKnownStatus}</Text>
       <Text>Job ID: {job.jobId}</Text>
-      <Text>BTIH: {job.btih}</Text>
+      <Text>Hash: {job.hash}</Text>
       <Text>
         Progress:{' '}
         {job.lastKnownStatus === 'completed'
