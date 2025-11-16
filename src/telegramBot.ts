@@ -348,6 +348,9 @@ const formatSize = (size: number | null | undefined, locale: string): string => 
   return translate('common.sizeGb', locale, { value });
 };
 
+const escapeHtml = (value: string): string =>
+  value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
 const buildPlayerUrl = (jobId: string): string => {
   const normalizedBase = config.playerBaseUrl.replace(/\/+$/, '');
   return `${normalizedBase}?job_id=${encodeURIComponent(jobId)}`;
@@ -365,33 +368,49 @@ const canStreamJob = (job: OwnedJob): boolean => {
   return filename.toLowerCase().endsWith('.mp4');
 };
 
-const formatJobInfoLines = (job: OwnedJob, locale: string): string[] => {
-  const downloadLink = normalizeShortUrl(job.shortUrl ?? null);
-  const playerLink = canStreamJob(job) ? buildPlayerUrl(job.jobId) : undefined;
-  const progressText =
-    job.lastKnownStatus === 'completed'
-      ? '100%'
-      : job.progress === null
-        ? '—'
-        : `${Math.round(job.progress * 100)}%`;
-  const lines = [
-    translate('job.jobIdLine', locale, { jobId: job.jobId }),
-    translate('job.hashLine', locale, { hash: job.hash }),
-    translate('job.statusLine', locale, { status: formatStatus(job.lastKnownStatus, locale) }),
-    translate('job.progressLine', locale, { progress: progressText }),
-    translate('job.sizeLine', locale, { size: formatSize(job.sizeBytes ?? null, locale) }),
-    downloadLink ? translate('job.downloadLine', locale, { url: downloadLink }) : undefined,
-    playerLink ? translate('job.playerLine', locale, { url: playerLink }) : undefined,
-    job.error ? translate('job.errorLine', locale, { message: job.error }) : undefined
-  ];
-  return lines.filter((line): line is string => Boolean(line));
-};
-
 const formatJobDetail = (job: OwnedJob, locale: string): string => {
-  return [translate('job.titleLine', locale, { title: job.label ?? job.hash }), ...formatJobInfoLines(job, locale)].join('\n');
+  const title = job.label ?? job.hash;
+  const statusText = formatStatus(job.lastKnownStatus, locale);
+  const hasProgress = typeof job.progress === 'number' && !Number.isNaN(job.progress);
+  let statusValue: string;
+  if (job.lastKnownStatus === 'downloading' && hasProgress) {
+    const percent = Math.round((job.progress ?? 0) * 100);
+    statusValue = `${statusText} - ${percent}%`;
+  } else if (job.lastKnownStatus === 'error' && job.error) {
+    statusValue = `${statusText} - ${job.error}`;
+  } else {
+    statusValue = statusText;
+  }
+  const statusLine = translate('job.statusLine', locale, { status: statusValue });
+  const sizeLine = translate('job.sizeLine', locale, {
+    size: formatSize(job.sizeBytes ?? null, locale)
+  });
+  const jobIdLine = translate('job.jobIdLine', locale, { jobId: job.jobId });
+  const hashLine = translate('job.hashLine', locale, { hash: job.hash });
+  const downloadUrl = normalizeShortUrl(job.shortUrl ?? null);
+  const playerUrl = canStreamJob(job) ? buildPlayerUrl(job.jobId) : undefined;
+  const downloadLabel = translate('job.links.download', locale);
+  const watchLabel = translate('job.links.watch', locale);
+  let linksLine: string | null = null;
+  if (playerUrl) {
+    linksLine = `<a href="${escapeHtml(playerUrl)}">${escapeHtml(watchLabel)}</a>`;
+  } else if (downloadUrl) {
+    linksLine = `<a href="${escapeHtml(downloadUrl)}">${escapeHtml(downloadLabel)}</a>`;
+  }
+  const lines = [
+    `<b>${escapeHtml(title)}</b>`,
+    '',
+    escapeHtml(statusLine),
+    escapeHtml(sizeLine),
+    escapeHtml(jobIdLine),
+    escapeHtml(hashLine)
+  ];
+  if (linksLine) {
+    lines.push('', linksLine);
+  }
+  return lines.join('\n');
 };
 
-const escapeHtml = (value: string): string => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const buildStartLink = (payload: string): string => {
   const username = getBotUsername();
   return `https://t.me/${username}?start=${encodeURIComponent(payload)}`;
@@ -561,12 +580,10 @@ const startDownloadFromToken = async (
 
 const buildJobActionsKeyboard = (job: OwnedJob, locale: string) => {
   const encodedId = encodeURIComponent(job.jobId);
-  const downloadLink = normalizeShortUrl(job.shortUrl ?? null);
   const buttons = [
-    downloadLink ? Markup.button.url(translate('jobs.actions.openLink', locale), downloadLink) : undefined,
     Markup.button.callback(translate('jobs.actions.refresh', locale), `refresh:${encodedId}`),
     Markup.button.callback(translate('jobs.actions.delete', locale), `delete:${encodedId}`)
-  ].filter(Boolean) as Parameters<typeof Markup.inlineKeyboard>[0];
+  ] as Parameters<typeof Markup.inlineKeyboard>[0];
   return Markup.inlineKeyboard(buttons, { columns: 1 });
 };
 
@@ -582,7 +599,8 @@ const sendJobDetailMessage = async (
     return;
   }
   const locale = getChatLocale(chatId);
-  await replyFn(formatJobDetail(job, locale), buildJobActionsKeyboard(job, locale));
+  const keyboard = buildJobActionsKeyboard(job, locale);
+  await replyFn(formatJobDetail(job, locale), { ...keyboard, parse_mode: 'HTML' as const });
 };
 
 const sendJobList = async (chatId: number, clientId: string) => {
@@ -759,7 +777,8 @@ bot.action(new RegExp(`^${DOWNLOAD_CONFIRM_PREFIX}(.+)$`), async (ctx) => {
     const isExistingJob = knownJobIds.has(job.jobId);
 
     if (isExistingJob) {
-      await ctx.reply(formatJobDetail(job, locale), buildJobActionsKeyboard(job, locale));
+      const keyboard = buildJobActionsKeyboard(job, locale);
+      await ctx.reply(formatJobDetail(job, locale), { ...keyboard, parse_mode: 'HTML' as const });
       return;
     }
 
@@ -822,7 +841,8 @@ bot.action(/^refresh:(.+)$/, async (ctx) => {
     return;
   }
   const locale = getChatLocale(chatId);
-  await safeEditMessageText(ctx, formatJobDetail(job, locale), buildJobActionsKeyboard(job, locale));
+  const keyboard = buildJobActionsKeyboard(job, locale);
+  await safeEditMessageText(ctx, formatJobDetail(job, locale), { ...keyboard, parse_mode: 'HTML' as const });
 });
 
 bot.action(/^delete:(.+)$/, async (ctx) => {
