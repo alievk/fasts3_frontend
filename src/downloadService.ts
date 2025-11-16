@@ -18,6 +18,23 @@ type DownloadServiceEvents = {
   ready: (jobs: OwnedJob[]) => void;
 };
 
+const hasKnownSize = (value: number | null | undefined): value is number =>
+  typeof value === 'number' && Number.isFinite(value) && value > 0;
+
+const resolveTorrentSizeBytes = (result: SearchResult, detail: SearchResultDetail): number | null => {
+  if (hasKnownSize(result.sizeBytes)) {
+    return result.sizeBytes;
+  }
+  if (hasKnownSize(detail.sizeBytes)) {
+    return detail.sizeBytes;
+  }
+  const largestFileSize = detail.files.reduce<number>(
+    (max, file) => (hasKnownSize(file.sizeBytes) && file.sizeBytes > max ? file.sizeBytes : max),
+    0
+  );
+  return largestFileSize > 0 ? largestFileSize : null;
+};
+
 const mapDetailToStored = (detail: JobDetail, existing?: StoredJob): StoredJob => ({
   jobId: detail.jobId,
   btih: detail.btih,
@@ -136,7 +153,7 @@ export class DownloadService extends EventEmitter {
       return undefined;
     }
     const resolvedTitle = detail.title?.trim().length ? detail.title : result.title;
-    const resolvedSizeBytes = detail.sizeBytes ?? result.sizeBytes ?? null;
+    const resolvedSizeBytes = resolveTorrentSizeBytes(result, detail);
     const normalizedHash = detail.hash && detail.hash.trim().length > 0 ? detail.hash : null;
     return {
       ...detail,

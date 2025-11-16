@@ -128,6 +128,15 @@ const normalizeShortUrl = (value?: string | null): string | null => {
 
 const encodeResultToken = (result: SearchResult): string => `${result.provider.toLowerCase()}_${result.id}`;
 
+const resolveBaseResult = (chatId: number, parsed: { provider: string; id: string }): SearchResult => {
+  const session = searchSessions.get(chatId);
+  const normalizedProvider = parsed.provider.toLowerCase();
+  const fromSession = session?.results.find(
+    (item) => item.provider.toLowerCase() === normalizedProvider && item.id === parsed.id
+  );
+  return fromSession ?? createPlaceholderResult(parsed.provider, parsed.id);
+};
+
 const parseDetailToken = (token: string | undefined | null): { provider: string; id: string } | null => {
   if (!token) {
     return null;
@@ -492,20 +501,21 @@ const startDownloadFromToken = async (
     await replyFn(translate('search.expired', locale));
     return;
   }
-	  const baseResult = createPlaceholderResult(parsed.provider, parsed.id);
-	  try {
-	    const fetchedDetail = await downloadService.getSearchResultDetail(baseResult);
-	    if (!fetchedDetail) {
-	      await replyFn(translate('search.detailUnavailable', locale, { provider: baseResult.providerLabel || baseResult.provider, id: baseResult.id }));
-	      return;
-	    }
-	    const detail = normalizeDetailHash(fetchedDetail);
-	    const { canStream, extensionValue, extensionDisplay } = resolveStreamability(
-	      detail,
-	      locale,
-	      baseResult.title
-	    );
-	    const streamOption = translate(canStream ? 'common.yes' : 'common.no', locale);
+  const baseResult = resolveBaseResult(chatId, parsed);
+  try {
+    const fetchedDetail = await downloadService.getSearchResultDetail(baseResult);
+    if (!fetchedDetail) {
+      await replyFn(
+        translate('search.detailUnavailable', locale, {
+          provider: baseResult.providerLabel || baseResult.provider,
+          id: baseResult.id
+        })
+      );
+      return;
+    }
+    const detail = normalizeDetailHash(fetchedDetail);
+    const { canStream, extensionValue, extensionDisplay } = resolveStreamability(detail, locale, baseResult.title);
+    const streamOption = translate(canStream ? 'common.yes' : 'common.no', locale);
     const streamLineBase = translate('search.detailStreamLine', locale, { option: streamOption });
     const streamLineText = canStream
       ? escapeHtml(streamLineBase)
@@ -689,7 +699,7 @@ bot.action(new RegExp(`^${DOWNLOAD_CONFIRM_PREFIX}(.+)$`), async (ctx) => {
     await ctx.reply(translate('search.expired', locale));
     return;
   }
-  const baseResult = createPlaceholderResult(parsed.provider, parsed.id);
+  const baseResult = resolveBaseResult(chatId, parsed);
   let detail: SearchResultDetail | undefined;
   try {
     const fetchedDetail = await downloadService.getSearchResultDetail(baseResult);
