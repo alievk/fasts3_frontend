@@ -2,7 +2,7 @@
   "ru": {
     "title.base": "Видеоплеер",
     "title.withLabel": "{{label}} • {{title}}",
-    "page.tagline": "Смотрите онлайн, скачивайте для офлайна или используйте AirPlay в Safari.",
+    "page.tagline": "Кнопка AirPlay в правом нижнем углу видео.",
     "buttons.download": "Скачать",
     "messages.loading": "Загрузка…",
     "locale.label": "Язык",
@@ -34,7 +34,7 @@
   "en": {
     "title.base": "Video Player",
     "title.withLabel": "{{label}} • {{title}}",
-    "page.tagline": "Stream, download for offline viewing, or AirPlay in Safari.",
+    "page.tagline": "AirPlay button is at the right botton corner of the video.",
     "buttons.download": "Download",
     "messages.loading": "Loading…",
     "locale.label": "Language",
