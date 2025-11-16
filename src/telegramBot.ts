@@ -743,17 +743,18 @@ bot.action(new RegExp(`^${DOWNLOAD_CONFIRM_PREFIX}(.+)$`), async (ctx) => {
   const clientId = await ensureTelegramClient(chatId);
   try {
     const job = await downloadService.startDownload(detail, clientId);
-    await ctx.reply(
-      [
-        translate('downloads.summaryTitle', locale, {
-          title: detail.title ?? baseResult.title
-        }),
-        translate('job.jobIdLine', locale, { jobId: job.jobId }),
-        translate('job.btihLine', locale, { btih: job.btih }),
-        '',
-        translate('downloads.checkStatusHint', locale)
-      ].join('\n')
+    const titleLine = escapeHtml(
+      translate('downloads.summaryTitle', locale, {
+        title: detail.title ?? baseResult.title
+      })
     );
+    const jobIdLine = escapeHtml(translate('job.jobIdLine', locale, { jobId: job.jobId }));
+    const btihLine = escapeHtml(translate('job.btihLine', locale, { btih: job.btih }));
+    const statusLabel = escapeHtml(translate('downloads.checkStatusHint', locale));
+    const statusLink = `<a href="${escapeHtml(buildStartLink(`${JOB_PAYLOAD_PREFIX}${job.jobId}`))}">${statusLabel}</a>`;
+    await ctx.reply([titleLine, jobIdLine, btihLine, '', statusLink].join('\n'), {
+      parse_mode: 'HTML' as const
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     await ctx.reply(translate('downloads.startFailed', locale, { message }));
