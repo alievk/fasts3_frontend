@@ -117,6 +117,7 @@ type SearchSession = {
 
 const searchPageSize = config.searchPageSize;
 const DETAIL_PAYLOAD_PREFIX = 'details_';
+const JOB_PAYLOAD_PREFIX = 'job_';
 const DOWNLOAD_CONFIRM_PREFIX = 'confirm:';
 const DOWNLOAD_CANCEL_ACTION = 'dismiss-detail';
 const STREAM_INFO_PAYLOAD_PREFIX = 'streamhelp_';
@@ -396,6 +397,14 @@ const normalizeStartPayload = (payload?: string | null): string | undefined => {
   }
 };
 
+const parseJobPayload = (payload?: string | null): string | null => {
+  if (!payload || !payload.startsWith(JOB_PAYLOAD_PREFIX)) {
+    return null;
+  }
+  const jobId = payload.slice(JOB_PAYLOAD_PREFIX.length).trim();
+  return jobId || null;
+};
+
 const normalizeDetailHash = (detail: SearchResultDetail): SearchResultDetail => {
   const trimmed = detail.hash?.trim();
   return { ...detail, hash: trimmed && trimmed.length > 0 ? trimmed : null };
@@ -517,7 +526,7 @@ const startDownloadFromToken = async (
     const { canStream, extensionValue, extensionDisplay } = resolveStreamability(detail, locale, baseResult.title);
     const streamOption = translate(canStream ? 'common.yes' : 'common.no', locale);
     const streamLineBase = translate('search.detailStreamLine', locale, { option: streamOption });
-    const streamLineText = canStream
+  const streamLineText = canStream
       ? escapeHtml(streamLineBase)
       : `${escapeHtml(streamLineBase)} (<a href="${escapeHtml(buildStartLink(`${STREAM_INFO_PAYLOAD_PREFIX}${extensionValue}`))}">${escapeHtml(translate('search.streamWhy', locale))}</a>)`;
     const hashValue = detail.hash ?? translate('common.unknown', locale);
@@ -550,17 +559,19 @@ const buildJobActionsKeyboard = (job: OwnedJob, locale: string) => {
   return Markup.inlineKeyboard(buttons, { columns: 1 });
 };
 
-const buildJobsKeyboard = (jobs: OwnedJob[], locale: string) => {
-  const buttons = jobs.map((job) =>
-    Markup.button.callback(
-      translate('jobs.listButton', locale, {
-        title: job.label ?? job.btih,
-        status: formatStatus(job.lastKnownStatus, locale)
-      }),
-      `job:${encodeURIComponent(job.jobId)}`
-    )
-  );
-  return Markup.inlineKeyboard(buttons, { columns: 1 });
+const sendJobDetailMessage = async (
+  chatId: number,
+  clientId: string,
+  jobId: string,
+  replyFn: (text: string, extra?: SendMessageExtra) => Promise<unknown>
+): Promise<void> => {
+  const job = findOwnedJob(jobId, clientId);
+  if (!job) {
+    await replyFn(translateForChat(chatId, 'jobs.notFound', { jobId }));
+    return;
+  }
+  const locale = getChatLocale(chatId);
+  await replyFn(formatJobDetail(job, locale), buildJobActionsKeyboard(job, locale));
 };
 
 const sendJobList = async (chatId: number, clientId: string) => {
@@ -570,7 +581,15 @@ const sendJobList = async (chatId: number, clientId: string) => {
     await sendTelegramMessage(chatId, translate('jobs.listEmpty', locale));
     return;
   }
-  await sendTelegramMessage(chatId, translate('jobs.listPrompt', locale), buildJobsKeyboard(jobs, locale));
+  const openLabel = escapeHtml(translate('search.downloadLinkLabel', locale));
+  const lines = jobs.map((job, index) => {
+    const title = job.label ?? job.btih;
+    const statusText = formatStatus(job.lastKnownStatus, locale);
+    const link = `<a href="${escapeHtml(buildStartLink(`${JOB_PAYLOAD_PREFIX}${job.jobId}`))}">${openLabel}</a>`;
+    return `${index + 1}. ${escapeHtml(title)} - ${escapeHtml(statusText)} - ${link}`;
+  });
+  const text = lines.join('\n\n');
+  await sendTelegramMessage(chatId, text, { parse_mode: 'HTML' as const });
 };
 
 bot.use(async (ctx, next) => {
@@ -591,6 +610,12 @@ bot.start(async (ctx) => {
   if (payload?.startsWith(STREAM_INFO_PAYLOAD_PREFIX)) {
     const extensionValue = payload.slice(STREAM_INFO_PAYLOAD_PREFIX.length) || 'unknown';
     await ctx.reply(translateForChat(chatId, 'search.streamExplanation', { extension: extensionValue }));
+    return;
+  }
+  const jobPayload = parseJobPayload(payload);
+  if (jobPayload) {
+    const clientId = await ensureTelegramClient(chatId);
+    await sendJobDetailMessage(chatId, clientId, jobPayload, (text, extra) => ctx.reply(text, extra));
     return;
   }
   const payloadToken = parseDetailPayload(payload);
@@ -750,13 +775,7 @@ bot.action(/^job:(.+)$/, async (ctx) => {
   }
   await safeAnswerCallback(ctx);
   const clientId = await ensureTelegramClient(chatId);
-  const job = findOwnedJob(jobId, clientId);
-  if (!job) {
-    await ctx.reply(translateForChat(chatId, 'jobs.notFound', { jobId }));
-    return;
-  }
-  const locale = getChatLocale(chatId);
-  await ctx.reply(formatJobDetail(job, locale), buildJobActionsKeyboard(job, locale));
+  await sendJobDetailMessage(chatId, clientId, jobId, (text, extra) => ctx.reply(text, extra));
 });
 
 bot.action(/^refresh:(.+)$/, async (ctx) => {
