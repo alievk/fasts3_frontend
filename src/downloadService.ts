@@ -21,6 +21,19 @@ type DownloadServiceEvents = {
 const hasKnownSize = (value: number | null | undefined): value is number =>
   typeof value === 'number' && Number.isFinite(value) && value > 0;
 
+const resolveTorrentTitle = (result: SearchResult, detail: SearchResultDetail): string => {
+  const id = result.id;
+  const searchTitle = result.title.trim();
+  const detailTitle = detail.title.trim();
+  if (searchTitle && searchTitle !== id) {
+    return searchTitle;
+  }
+  if (detailTitle && detailTitle !== id) {
+    return detailTitle;
+  }
+  return searchTitle || detailTitle || id;
+};
+
 const resolveTorrentSizeBytes = (result: SearchResult, detail: SearchResultDetail): number | null => {
   if (hasKnownSize(result.sizeBytes)) {
     return result.sizeBytes;
@@ -152,7 +165,7 @@ export class DownloadService extends EventEmitter {
     if (!detail) {
       return undefined;
     }
-    const resolvedTitle = detail.title?.trim().length ? detail.title : result.title;
+    const resolvedTitle = resolveTorrentTitle(result, detail);
     const resolvedSizeBytes = resolveTorrentSizeBytes(result, detail);
     const normalizedHash = detail.hash && detail.hash.trim().length > 0 ? detail.hash : null;
     return {
