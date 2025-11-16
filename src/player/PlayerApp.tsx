@@ -560,7 +560,10 @@ export const PlayerApp: React.FC = () => {
     }
 
     .page__header {
-      text-align: center;
+      order: 2;
+      width: min(100%, 960px);
+      text-align: left;
+      align-self: center;
     }
 
     .page__toolbar {
@@ -612,8 +615,8 @@ export const PlayerApp: React.FC = () => {
     }
 
     .player {
-      width: min(100%, 1000px);
-      flex: 1;
+      order: 1;
+      width: min(100%, 960px);
       display: flex;
       flex-direction: column;
       gap: 12px;
@@ -621,17 +624,20 @@ export const PlayerApp: React.FC = () => {
 
     video {
       width: 100%;
-      flex: 1;
+      aspect-ratio: 16 / 9;
+      display: block;
       background: #000;
       border-radius: 16px;
       border: 1px solid rgba(255, 255, 255, 0.1);
       overflow: hidden;
+      object-fit: contain;
     }
 
     .actions {
       display: flex;
       flex-wrap: wrap;
       gap: 12px;
+      justify-content: flex-end;
     }
 
     .button {
