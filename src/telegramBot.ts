@@ -89,8 +89,9 @@ const buildLocaleToggleKeyboard = (locale: string) => {
 };
 const buildStartContent = (locale: string) => {
   const howItWorks = translate('common.howItWorksHtml', locale);
+  const advantages = translate('common.advantagesHtml', locale);
   return {
-    text: translate('start.messageHtml', locale, { howItWorks }),
+    text: translate('start.messageHtml', locale, { howItWorks, advantages }),
     extra: { parse_mode: 'HTML' as const }
   };
 };
