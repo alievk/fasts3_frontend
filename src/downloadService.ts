@@ -166,8 +166,26 @@ export class DownloadService extends EventEmitter {
     if (!detail) {
       return undefined;
     }
-    const resolvedTitle = resolveTorrentTitle(result, detail);
-    const resolvedSizeBytes = resolveTorrentSizeBytes(result, detail);
+    let sourceResult: SearchResult = result;
+    const hasResultSize = hasKnownSize(result.sizeBytes);
+    const hasDetailSize = hasKnownSize(detail.sizeBytes);
+    const hasFileSizes = detail.files.some((file) => hasKnownSize(file.sizeBytes));
+
+    if (!hasResultSize && !hasDetailSize && !hasFileSizes && detail.title.trim()) {
+      const freshResults = await this.apiClient.search(detail.title.trim());
+      const matched = freshResults.find(
+        (item) =>
+          item.provider.toLowerCase() === result.provider.toLowerCase() &&
+          item.id === result.id &&
+          hasKnownSize(item.sizeBytes)
+      );
+      if (matched) {
+        sourceResult = matched;
+      }
+    }
+
+    const resolvedTitle = resolveTorrentTitle(sourceResult, detail);
+    const resolvedSizeBytes = resolveTorrentSizeBytes(sourceResult, detail);
     const normalizedHash = normalizeHash(detail.hash ?? null);
     return {
       ...detail,
