@@ -68,13 +68,8 @@ const buildLocaleToggleKeyboard = (locale: string) => {
   return Markup.inlineKeyboard([Markup.button.callback(translate(buttonKey, locale), `set-locale:${targetLocale}`)]);
 };
 const buildStartContent = (locale: string) => ({
-  text: [
-    translate('start.welcome', locale),
-    translate('start.commandsTitle', locale),
-    translate('start.searchHint', locale),
-    translate('start.jobsHint', locale)
-  ].join('\n'),
-  keyboard: buildLocaleToggleKeyboard(locale)
+  text: translate('start.messageHtml', locale),
+  extra: { parse_mode: 'HTML' as const }
 });
 const sendStartMessage = async (
   chatId: number,
@@ -83,10 +78,10 @@ const sendStartMessage = async (
   const locale = getChatLocale(chatId);
   const content = buildStartContent(locale);
   if (replyFn) {
-    await replyFn(content.text, content.keyboard);
+    await replyFn(content.text, content.extra);
     return;
   }
-  await sendTelegramMessage(chatId, content.text, content.keyboard);
+  await sendTelegramMessage(chatId, content.text, content.extra);
 };
 const apiClient = createApiClient();
 const clientRegistry = createClientRegistry(config.clientDbPath);
