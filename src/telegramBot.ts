@@ -34,13 +34,20 @@ if (!botToken) {
 }
 
 const config = loadConfig();
-const botTranslations = botTranslationsData as Record<string, Record<string, string>>;
+const botTranslations = botTranslationsData as Record<string, Record<string, string | string[]>>;
 type TranslationParams = Record<string, string | number>;
 const PRIMARY_LOCALE = 'ru';
 const isSupportedLocale = (locale?: string): locale is string =>
   Boolean(locale && Object.prototype.hasOwnProperty.call(botTranslations, locale));
 const defaultLocale = isSupportedLocale(config.botLocale) ? config.botLocale : PRIMARY_LOCALE;
-const resolveTemplate = (locale: string, key: string): string | undefined => botTranslations[locale]?.[key];
+const normalizeTranslationValue = (value: string | string[]): string => (Array.isArray(value) ? value.join('') : value);
+const resolveTemplate = (locale: string, key: string): string | undefined => {
+  const value = botTranslations[locale]?.[key];
+  if (value === undefined) {
+    return undefined;
+  }
+  return normalizeTranslationValue(value);
+};
 const formatTemplate = (template: string, params?: TranslationParams): string =>
   template.replace(/\{([^}]+)\}/g, (_match, token: string) => {
     const value = params?.[token.trim()];
@@ -80,10 +87,13 @@ const buildLocaleToggleKeyboard = (locale: string) => {
   const buttonKey = targetLocale === 'en' ? 'start.switchToEnglish' : 'start.switchToRussian';
   return Markup.inlineKeyboard([Markup.button.callback(translate(buttonKey, locale), `set-locale:${targetLocale}`)]);
 };
-const buildStartContent = (locale: string) => ({
-  text: translate('start.messageHtml', locale),
-  extra: { parse_mode: 'HTML' as const }
-});
+const buildStartContent = (locale: string) => {
+  const howItWorks = translate('common.howItWorksHtml', locale);
+  return {
+    text: translate('start.messageHtml', locale, { howItWorks }),
+    extra: { parse_mode: 'HTML' as const }
+  };
+};
 const sendStartMessage = async (
   chatId: number,
   replyFn?: (text: string, extra?: SendMessageExtra) => Promise<unknown>
@@ -113,7 +123,8 @@ const getBotUsername = (): string => {
 
 const botCommands = [
   { command: 'search', description: translateDefault('commands.searchDescription') },
-  { command: 'jobs', description: translateDefault('commands.jobsDescription') }
+  { command: 'jobs', description: translateDefault('commands.jobsDescription') },
+  { command: 'help', description: translateDefault('commands.helpDescription') }
 ];
 
 const activeChats = new Set<number>();
@@ -681,6 +692,17 @@ bot.start(async (ctx) => {
     return;
   }
   await sendStartMessage(chatId, (text, extra) => ctx.reply(text, withDisabledPreview(extra)));
+});
+
+bot.command('help', async (ctx) => {
+  const chatId = ctx.chat?.id;
+  if (!chatId) {
+    return;
+  }
+  const howItWorks = translateForChat(chatId, 'common.howItWorksHtml');
+  const faq = translateForChat(chatId, 'faq.messageHtml');
+  const text = translateForChat(chatId, 'help.messageHtml', { howItWorks, faq });
+  await ctx.reply(text, withDisabledPreview({ parse_mode: 'HTML' as const }));
 });
 
 bot.command('search', async (ctx) => {
