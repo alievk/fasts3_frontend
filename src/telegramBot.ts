@@ -12,6 +12,19 @@ import { createClientRegistry } from './clientRegistry.js';
 import botTranslationsData from './locales/bot.json' with { type: 'json' };
 
 type SendMessageExtra = Parameters<Telegraf['telegram']['sendMessage']>[2];
+type EditMessageTextExtra = Parameters<Context['editMessageText']>[1];
+
+const withDisabledPreview = (extra?: SendMessageExtra): SendMessageExtra =>
+  ({
+    ...(extra as object),
+    disable_web_page_preview: true
+  } as SendMessageExtra);
+
+const withDisabledPreviewEdit = (extra?: EditMessageTextExtra): EditMessageTextExtra =>
+  ({
+    ...(extra as object),
+    disable_web_page_preview: true
+  } as EditMessageTextExtra);
 
 const botToken = process.env.TORRENT_TELEGRAM_BOT_TOKEN;
 
@@ -222,7 +235,7 @@ const sendTelegramMessage = async (
   extra?: Parameters<typeof bot.telegram.sendMessage>[2]
 ): Promise<void> => {
   try {
-    await bot.telegram.sendMessage(chatId, message, extra);
+    await bot.telegram.sendMessage(chatId, message, withDisabledPreview(extra));
   } catch (error) {
     const response = getTelegramErrorResponse(error);
     if (response?.error_code === 403) {
@@ -642,25 +655,32 @@ bot.start(async (ctx) => {
   const payload = normalizeStartPayload(ctx.startPayload);
   if (payload?.startsWith(STREAM_INFO_PAYLOAD_PREFIX)) {
     const extensionValue = payload.slice(STREAM_INFO_PAYLOAD_PREFIX.length) || 'unknown';
-    await ctx.reply(translateForChat(chatId, 'search.streamExplanation', { extension: extensionValue }));
+    await ctx.reply(
+      translateForChat(chatId, 'search.streamExplanation', { extension: extensionValue }),
+      withDisabledPreview()
+    );
     return;
   }
   if (payload?.startsWith(CANT_FIND_HELP_PAYLOAD_PREFIX)) {
-    await ctx.reply(translateForChat(chatId, 'search.cantFindHint'));
+    await ctx.reply(translateForChat(chatId, 'search.cantFindHint'), withDisabledPreview());
     return;
   }
   const jobPayload = parseJobPayload(payload);
   if (jobPayload) {
     const clientId = await ensureTelegramClient(chatId);
-    await sendJobDetailMessage(chatId, clientId, jobPayload, (text, extra) => ctx.reply(text, extra));
+    await sendJobDetailMessage(chatId, clientId, jobPayload, (text, extra) =>
+      ctx.reply(text, withDisabledPreview(extra))
+    );
     return;
   }
   const payloadToken = parseDetailPayload(payload);
   if (payloadToken) {
-    await startDownloadFromToken(chatId, payloadToken, (text, extra) => ctx.reply(text, extra));
+    await startDownloadFromToken(chatId, payloadToken, (text, extra) =>
+      ctx.reply(text, withDisabledPreview(extra))
+    );
     return;
   }
-  await sendStartMessage(chatId, (text, extra) => ctx.reply(text, extra));
+  await sendStartMessage(chatId, (text, extra) => ctx.reply(text, withDisabledPreview(extra)));
 });
 
 bot.command('search', async (ctx) => {
@@ -668,7 +688,7 @@ bot.command('search', async (ctx) => {
   if (!chatId) {
     return;
   }
-  await ctx.reply(translateForChat(chatId, 'search.prompt'));
+  await ctx.reply(translateForChat(chatId, 'search.prompt'), withDisabledPreview());
 });
 
 bot.on('message', async (ctx, next) => {
@@ -692,27 +712,27 @@ bot.on('message', async (ctx, next) => {
   }
   const query = text.trim();
   if (!query) {
-    await ctx.reply(translateForChat(chatId, 'search.prompt'));
+    await ctx.reply(translateForChat(chatId, 'search.prompt'), withDisabledPreview());
     return;
   }
   try {
-    await ctx.reply(translateForChat(chatId, 'search.searching', { query }));
+    await ctx.reply(translateForChat(chatId, 'search.searching', { query }), withDisabledPreview());
     const rawResults = await downloadService.search(query);
     if (rawResults.length === 0) {
-      await ctx.reply(translateForChat(chatId, 'search.noResults', { query }));
+      await ctx.reply(translateForChat(chatId, 'search.noResults', { query }), withDisabledPreview());
       return;
     }
     const locale = getChatLocale(chatId);
     const pageInfo = buildSearchPage(rawResults, 0, locale);
     const previousMessageId = searchSessions.get(chatId)?.messageId;
-    const sentMessage = await ctx.reply(pageInfo.text, pageInfo.extra);
+    const sentMessage = await ctx.reply(pageInfo.text, withDisabledPreview(pageInfo.extra));
     searchSessions.set(chatId, { results: rawResults, page: pageInfo.page, messageId: sentMessage.message_id });
     if (previousMessageId !== undefined) {
       await deleteSearchMessage(chatId, previousMessageId);
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    await ctx.reply(translateForChat(chatId, 'search.failed', { message }));
+    await ctx.reply(translateForChat(chatId, 'search.failed', { message }), withDisabledPreview());
   }
 });
 
@@ -743,7 +763,7 @@ bot.action(/^page:(\d+)$/, async (ctx) => {
   const pageInfo = buildSearchPage(session.results, requestedPage, getChatLocale(chatId));
   session.page = pageInfo.page;
   await safeAnswerCallback(ctx);
-  await safeEditMessageText(ctx, pageInfo.text, pageInfo.extra);
+  await safeEditMessageText(ctx, pageInfo.text, withDisabledPreviewEdit(pageInfo.extra));
 });
 
 bot.action(new RegExp(`^${DOWNLOAD_CONFIRM_PREFIX}(.+)$`), async (ctx) => {
@@ -758,7 +778,7 @@ bot.action(new RegExp(`^${DOWNLOAD_CONFIRM_PREFIX}(.+)$`), async (ctx) => {
   const locale = getChatLocale(chatId);
   const parsed = parseDetailToken(rawToken);
   if (!parsed) {
-    await ctx.reply(translate('search.expired', locale));
+    await ctx.reply(translate('search.expired', locale), withDisabledPreview());
     return;
   }
   const baseResult = resolveBaseResult(chatId, parsed);
@@ -770,11 +790,17 @@ bot.action(new RegExp(`^${DOWNLOAD_CONFIRM_PREFIX}(.+)$`), async (ctx) => {
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    await ctx.reply(translate('search.detailFailed', locale, { message }));
+    await ctx.reply(translate('search.detailFailed', locale, { message }), withDisabledPreview());
     return;
   }
   if (!detail) {
-    await ctx.reply(translate('search.detailUnavailable', locale, { provider: baseResult.providerLabel || baseResult.provider, id: baseResult.id }));
+    await ctx.reply(
+      translate('search.detailUnavailable', locale, {
+        provider: baseResult.providerLabel || baseResult.provider,
+        id: baseResult.id
+      }),
+      withDisabledPreview()
+    );
     return;
   }
   const clientId = await ensureTelegramClient(chatId);
@@ -786,7 +812,10 @@ bot.action(new RegExp(`^${DOWNLOAD_CONFIRM_PREFIX}(.+)$`), async (ctx) => {
 
     if (isExistingJob) {
       const keyboard = buildJobActionsKeyboard(job, locale);
-      await ctx.reply(formatJobDetail(job, locale), { ...keyboard, parse_mode: 'HTML' as const });
+      await ctx.reply(
+        formatJobDetail(job, locale),
+        withDisabledPreview({ ...keyboard, parse_mode: 'HTML' as const })
+      );
       return;
     }
 
@@ -804,12 +833,13 @@ bot.action(new RegExp(`^${DOWNLOAD_CONFIRM_PREFIX}(.+)$`), async (ctx) => {
     const hashLine = escapeHtml(translate('job.hashLine', locale, { hash: job.hash }));
     const statusLabel = escapeHtml(translate('downloads.checkStatusHint', locale));
     const statusLink = `<a href="${escapeHtml(buildStartLink(`${JOB_PAYLOAD_PREFIX}${job.jobId}`))}">${statusLabel}</a>`;
-    await ctx.reply([titleLine, jobIdLine, hashLine, '', statusLink].join('\n'), {
-      parse_mode: 'HTML' as const
-    });
+    await ctx.reply(
+      [titleLine, jobIdLine, hashLine, '', statusLink].join('\n'),
+      withDisabledPreview({ parse_mode: 'HTML' as const })
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    await ctx.reply(translate('downloads.startFailed', locale, { message }));
+    await ctx.reply(translate('downloads.startFailed', locale, { message }), withDisabledPreview());
   }
 });
 
@@ -828,7 +858,9 @@ bot.action(/^job:(.+)$/, async (ctx) => {
   }
   await safeAnswerCallback(ctx);
   const clientId = await ensureTelegramClient(chatId);
-  await sendJobDetailMessage(chatId, clientId, jobId, (text, extra) => ctx.reply(text, extra));
+  await sendJobDetailMessage(chatId, clientId, jobId, (text, extra) =>
+    ctx.reply(text, withDisabledPreview(extra))
+  );
 });
 
 bot.action(/^refresh:(.+)$/, async (ctx) => {
@@ -845,12 +877,16 @@ bot.action(/^refresh:(.+)$/, async (ctx) => {
   const clientId = await ensureTelegramClient(chatId);
   const job = findOwnedJob(jobId, clientId);
   if (!job) {
-    await safeEditMessageText(ctx, translateForChat(chatId, 'jobs.notFound', { jobId }));
+    await safeEditMessageText(ctx, translateForChat(chatId, 'jobs.notFound', { jobId }), withDisabledPreviewEdit());
     return;
   }
   const locale = getChatLocale(chatId);
   const keyboard = buildJobActionsKeyboard(job, locale);
-  await safeEditMessageText(ctx, formatJobDetail(job, locale), { ...keyboard, parse_mode: 'HTML' as const });
+  await safeEditMessageText(
+    ctx,
+    formatJobDetail(job, locale),
+    withDisabledPreviewEdit({ ...keyboard, parse_mode: 'HTML' as const })
+  );
 });
 
 bot.action(/^delete:(.+)$/, async (ctx) => {
@@ -866,13 +902,17 @@ bot.action(/^delete:(.+)$/, async (ctx) => {
   const clientId = await ensureTelegramClient(chatId);
   const existing = findOwnedJob(jobId, clientId);
   if (!existing) {
-    await safeEditMessageText(ctx, translateForChat(chatId, 'jobs.notFound', { jobId }));
+    await safeEditMessageText(ctx, translateForChat(chatId, 'jobs.notFound', { jobId }), withDisabledPreviewEdit());
     return;
   }
   removalSuppressions.set(jobId, clientId);
   await downloadService.remove(jobId);
   try {
-    await safeEditMessageText(ctx, translateForChat(chatId, 'jobs.removed', { label: existing.label ?? jobId }));
+    await safeEditMessageText(
+      ctx,
+      translateForChat(chatId, 'jobs.removed', { label: existing.label ?? jobId }),
+      withDisabledPreviewEdit()
+    );
   } catch (error) {
     console.error('Failed to edit job message after deletion:', error);
   }
