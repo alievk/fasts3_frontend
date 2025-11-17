@@ -490,8 +490,15 @@ const resolveStreamability = (detail: SearchResultDetail, locale: string, fallba
       canStream = true;
     }
   }
-  const extensionValue = rawExtension ?? 'unknown';
-  const extensionDisplay = rawExtension ?? translate('common.unknown', locale);
+  let extensionValue = rawExtension;
+  if (!extensionValue) {
+    const titleLookup = (detail.title ?? fallbackTitle).toLowerCase();
+    if (titleLookup.includes('mp4')) {
+      extensionValue = 'mp4';
+    }
+  }
+  const extensionDisplay = extensionValue ?? translate('common.unknown', locale);
+  extensionValue = extensionValue ?? 'unknown';
   return { canStream, extensionValue, extensionDisplay };
 };
 
@@ -584,21 +591,33 @@ const startDownloadFromToken = async (
     const detail = normalizeDetailHash(fetchedDetail);
     const { canStream, extensionValue, extensionDisplay } = resolveStreamability(detail, locale, baseResult.title);
     const streamOption = translate(canStream ? 'common.yes' : 'common.no', locale);
-    const streamLineBase = translate('search.detailStreamLine', locale, { option: streamOption });
-  const streamLineText = canStream
-      ? escapeHtml(streamLineBase)
-      : `${escapeHtml(streamLineBase)} (<a href="${escapeHtml(buildStartLink(`${STREAM_INFO_PAYLOAD_PREFIX}${extensionValue}`))}">${escapeHtml(translate('search.streamWhy', locale))}</a>)`;
     const hashValue = detail.hash ?? translate('common.unknown', locale);
     const displayTitle = detail.title ?? baseResult.title;
-    const detailLines = [
-      escapeHtml(translate('search.detailTitleLine', locale, { title: displayTitle })),
-      escapeHtml(translate('search.detailProviderLine', locale, { provider: baseResult.providerLabel || baseResult.provider })),
-      escapeHtml(translate('search.detailIdLine', locale, { id: baseResult.id })),
-      escapeHtml(translate('search.detailSizeLine', locale, { size: formatSize(detail.sizeBytes, locale) })),
-      escapeHtml(translate('search.detailHashLine', locale, { hash: hashValue })),
-      escapeHtml(translate('search.detailExtensionLine', locale, { extension: extensionDisplay })),
-      streamLineText
-    ];
+    const titleLine = `<b>${escapeHtml(displayTitle)}</b>`;
+    const providerLine = escapeHtml(
+      translate('search.detailProviderLine', locale, {
+        provider: baseResult.providerLabel || baseResult.provider
+      })
+    );
+    const effectiveSizeBytes = detail.sizeBytes ?? baseResult.sizeBytes;
+    const sizeLine = escapeHtml(
+      translate('search.detailSizeLine', locale, { size: formatSize(effectiveSizeBytes, locale) })
+    );
+    const formatLine = escapeHtml(
+      translate('search.detailExtensionLine', locale, { extension: extensionDisplay })
+    );
+    const streamPrefixRaw = translate('search.detailStreamLine', locale, { option: '' });
+    const streamPrefix = escapeHtml(streamPrefixRaw.trimEnd());
+    const streamValue = escapeHtml(streamOption);
+    let streamLine = `${streamPrefix} <b>${streamValue}</b>`;
+    if (!canStream) {
+      const whyUrl = escapeHtml(buildStartLink(`${STREAM_INFO_PAYLOAD_PREFIX}${extensionValue}`));
+      const whyLabel = escapeHtml(translate('search.streamWhy', locale));
+      streamLine += ` (<a href="${whyUrl}">${whyLabel}</a>)`;
+    }
+    const idLine = escapeHtml(translate('search.detailIdLine', locale, { id: baseResult.id }));
+    const hashLine = escapeHtml(translate('search.detailHashLine', locale, { hash: hashValue }));
+    const detailLines = [titleLine, '', providerLine, sizeLine, formatLine, streamLine, idLine, hashLine];
     const keyboard = buildDownloadConfirmationKeyboard(token, locale);
     await replyFn(detailLines.join('\n'), { ...keyboard, parse_mode: 'HTML' as const });
   } catch (error) {
