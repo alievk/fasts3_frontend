@@ -122,6 +122,7 @@ const JOB_PAYLOAD_PREFIX = 'job_';
 const DOWNLOAD_CONFIRM_PREFIX = 'confirm:';
 const DOWNLOAD_CANCEL_ACTION = 'dismiss-detail';
 const STREAM_INFO_PAYLOAD_PREFIX = 'streamhelp_';
+const CANT_FIND_HELP_PAYLOAD_PREFIX = 'cantfind_';
 
 const normalizeShortUrl = (value?: string | null): string | null => {
   const trimmed = value?.trim();
@@ -480,6 +481,13 @@ const formatDownloadLinkLine = (token: string, locale: string): string => {
   const link = `<a href="${buildStartLink(payload)}">${escapeHtml(label)}</a>`;
   return translate('search.downloadLinkLine', locale, { url: link });
 };
+
+const formatCantFindHelpLinkLine = (locale: string): string => {
+  const label = translate('search.cantFindLinkLabel', locale);
+  const url = escapeHtml(buildStartLink(CANT_FIND_HELP_PAYLOAD_PREFIX));
+  return `<a href="${url}">${escapeHtml(label)}</a>`;
+};
+
 const parseDetailPayload = (payload?: string | null): string | null => {
   if (!payload || !payload.startsWith(DETAIL_PAYLOAD_PREFIX)) {
     return null;
@@ -514,7 +522,8 @@ const buildSearchPage = (results: SearchResult[], requestedPage: number, locale:
   const keyboard = navButtons.length > 0 ? Markup.inlineKeyboard([navButtons]) : undefined;
   const extra = keyboard ? { ...keyboard, parse_mode: 'HTML' as const } : ({ parse_mode: 'HTML' as const });
   const pageCounter = escapeHtml(translate('search.pageCounter', locale, { current: page + 1, total: totalPages }));
-  const text = `${lines.join('\n\n')}\n\n${pageCounter}`;
+  const cantFindLinkLine = formatCantFindHelpLinkLine(locale);
+  const text = `${lines.join('\n\n')}\n\n${cantFindLinkLine}\n\n${pageCounter}`;
   return {
     page,
     totalPages,
@@ -639,6 +648,10 @@ bot.start(async (ctx) => {
   if (payload?.startsWith(STREAM_INFO_PAYLOAD_PREFIX)) {
     const extensionValue = payload.slice(STREAM_INFO_PAYLOAD_PREFIX.length) || 'unknown';
     await ctx.reply(translateForChat(chatId, 'search.streamExplanation', { extension: extensionValue }));
+    return;
+  }
+  if (payload?.startsWith(CANT_FIND_HELP_PAYLOAD_PREFIX)) {
+    await ctx.reply(translateForChat(chatId, 'search.cantFindHint'));
     return;
   }
   const jobPayload = parseJobPayload(payload);
