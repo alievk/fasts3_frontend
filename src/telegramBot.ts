@@ -693,6 +693,7 @@ bot.start(async (ctx) => {
     return;
   }
   await sendStartMessage(chatId, (text, extra) => ctx.reply(text, withDisabledPreview(extra)));
+  await ctx.reply(translateForChat(chatId, 'search.prompt'), withDisabledPreview());
 });
 
 bot.command('help', async (ctx) => {
