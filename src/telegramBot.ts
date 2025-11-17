@@ -617,7 +617,7 @@ const startDownloadFromToken = async (
     }
     const idLine = escapeHtml(translate('search.detailIdLine', locale, { id: baseResult.id }));
     const hashLine = escapeHtml(translate('search.detailHashLine', locale, { hash: hashValue }));
-    const detailLines = [titleLine, '', providerLine, sizeLine, formatLine, streamLine, idLine, hashLine];
+    const detailLines = [titleLine, '', providerLine, idLine, hashLine, sizeLine, formatLine, streamLine];
     const keyboard = buildDownloadConfirmationKeyboard(token, locale);
     await replyFn(detailLines.join('\n'), { ...keyboard, parse_mode: 'HTML' as const });
   } catch (error) {
