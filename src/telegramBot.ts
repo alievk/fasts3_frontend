@@ -14,6 +14,13 @@ import botTranslationsData from './locales/bot.json' with { type: 'json' };
 type SendMessageExtra = Parameters<Telegraf['telegram']['sendMessage']>[2];
 type EditMessageTextExtra = Parameters<Context['editMessageText']>[1];
 
+/*
+  Assumptions:
+  - bot only handles 1:1 private chats (each chat.id is a single client)
+  - each OwnedJob has exactly one Telegram owner chat
+  - /start payloads and callback data are ephemeral and may expire between restarts
+*/
+
 const withDisabledPreview = (extra?: SendMessageExtra): SendMessageExtra =>
   ({
     ...(extra as object),
@@ -121,6 +128,15 @@ const getBotCommands = () => [
 ];
 
 const activeChats = new Set<number>();
+const completedJobs = new Set<string>();
+
+const getPrivateChatId = (ctx: Context): number | undefined => {
+  const chat = ctx.chat;
+  if (!chat || chat.type !== 'private') {
+    return undefined;
+  }
+  return chat.id;
+};
 
 type SearchSession = {
   results: SearchResult[];
@@ -142,14 +158,16 @@ const normalizeShortUrl = (value?: string | null): string | null => {
 };
 
 const encodeResultToken = (result: SearchResult): string => `${result.provider.toLowerCase()}_${result.id}`;
-
-const resolveBaseResult = (chatId: number, parsed: { provider: string; id: string }): SearchResult => {
+const resolveSessionResult = (chatId: number, parsed: { provider: string; id: string }): SearchResult | null => {
   const session = searchSessions.get(chatId);
+  if (!session) {
+    return null;
+  }
   const normalizedProvider = parsed.provider.toLowerCase();
-  const fromSession = session?.results.find(
+  const fromSession = session.results.find(
     (item) => item.provider.toLowerCase() === normalizedProvider && item.id === parsed.id
   );
-  return fromSession ?? createPlaceholderResult(parsed.provider, parsed.id);
+  return fromSession ?? null;
 };
 
 const parseDetailToken = (token: string | undefined | null): { provider: string; id: string } | null => {
@@ -167,18 +185,7 @@ const parseDetailToken = (token: string | undefined | null): { provider: string;
   return { provider: provider.toLowerCase(), id };
 };
 
-const createPlaceholderResult = (provider: string, id: string): SearchResult => ({
-  id,
-  provider,
-  providerLabel: provider,
-  title: id,
-  sizeBytes: null,
-  seeders: 0,
-  leechers: 0
-});
-
 const searchSessions = new Map<number, SearchSession>();
-const trackedJobs = new Map<string, OwnedJob>();
 const removalSuppressions = new Map<string, string>();
 
 const buildTelegramClientId = (chatId: number): string => `telegram:${chatId}`;
@@ -191,7 +198,7 @@ const ensureTelegramClient = async (chatId: number): Promise<string> => {
 };
 
 const getJobForClient = (jobId: string): OwnedJob | undefined =>
-  trackedJobs.get(jobId) ?? downloadService.getJobs().find((item) => item.jobId === jobId);
+  downloadService.getJobs().find((item) => item.jobId === jobId);
 
 const findOwnedJob = (jobId: string, clientId: string): OwnedJob | undefined => {
   const job = getJobForClient(jobId);
@@ -270,27 +277,31 @@ const broadcast = async (message: MessageBuilder, options?: { excludeChatId?: nu
   );
 };
 
+const getJobOwnerChatId = (job: OwnedJob): number | null => {
+  const prefix = 'telegram:';
+  if (!job.clientId.startsWith(prefix)) {
+    return null;
+  }
+  const rawId = job.clientId.slice(prefix.length);
+  const parsed = Number.parseInt(rawId, 10);
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+  return parsed;
+};
+
 const notifyJobOwner = async (
   job: OwnedJob,
   message: MessageBuilder,
   extra?: MessageExtraBuilder
 ): Promise<void> => {
-  const targets = await clientRegistry.getNotificationTargets(job.jobId);
-  if (targets.length === 0) {
+  const chatId = getJobOwnerChatId(job);
+  if (!chatId) {
     return;
   }
-  await Promise.all(
-    targets.map(async (target) => {
-      if (target.transport.type === 'telegram') {
-        const chatId = target.transport.chatId;
-        cacheChatLocale(chatId, target.locale ?? null);
-        const text = typeof message === 'function' ? message(chatId) : message;
-        const extraValue =
-          typeof extra === 'function' ? extra(chatId) : extra;
-        await sendTelegramMessage(chatId, text, extraValue);
-      }
-    })
-  );
+  const text = typeof message === 'function' ? message(chatId) : message;
+  const extraValue = typeof extra === 'function' ? extra(chatId) : extra;
+  await sendTelegramMessage(chatId, text, extraValue);
 };
 
 const isQueryTooOldError = (error: unknown): boolean => {
@@ -568,7 +579,11 @@ const startDownloadFromToken = async (
     await replyFn(translate('search.expired', locale));
     return;
   }
-  const baseResult = resolveBaseResult(chatId, parsed);
+  const baseResult = resolveSessionResult(chatId, parsed);
+  if (!baseResult) {
+    await replyFn(translate('search.expired', locale));
+    return;
+  }
   try {
     const fetchedDetail = await downloadService.getSearchResultDetail(baseResult);
     if (!fetchedDetail) {
@@ -667,33 +682,42 @@ export type TelegramBotRuntime = {
   stop: (reason: string) => Promise<void>;
 };
 
-export const createTelegramBot = (botToken: string, providedConfig: Config): TelegramBotRuntime => {
+type TelegramBotDependencies = {
+  apiClient?: ApiClient;
+  clientRegistry?: ClientRegistry;
+  searchPipeline?: SearchResultPipeline;
+  downloadService?: DownloadService;
+  poller?: Poller;
+};
+
+export const createTelegramBot = (
+  botToken: string,
+  providedConfig: Config,
+  deps: TelegramBotDependencies = {}
+): TelegramBotRuntime => {
   config = providedConfig;
   defaultLocale = isSupportedLocale(config.botLocale) ? config.botLocale : PRIMARY_LOCALE;
   searchPageSize = config.searchPageSize;
-  apiClient = createApiClient();
-  clientRegistry = createClientRegistry(config.clientDbPath);
-  searchPipeline = createSearchPipeline(config);
-  downloadService = new DownloadService(apiClient, clientRegistry, config.searchLimit, searchPipeline);
-  poller = new Poller(downloadService, config.pollingIntervalMs);
+  apiClient = deps.apiClient ?? createApiClient();
+  clientRegistry = deps.clientRegistry ?? createClientRegistry(config.clientDbPath);
+  searchPipeline = deps.searchPipeline ?? createSearchPipeline(config);
+  downloadService =
+    deps.downloadService ?? new DownloadService(apiClient, clientRegistry, config.searchLimit, searchPipeline);
+  poller = deps.poller ?? new Poller(downloadService, config.pollingIntervalMs);
   const telegramIpv4Agent = new HttpsAgent({ family: 4 });
   bot = new Telegraf(botToken, { telegram: { agent: telegramIpv4Agent } });
 
   bot.use(async (ctx, next) => {
-    if (ctx.chat) {
-      activeChats.add(ctx.chat.id);
-      await ensureTelegramClient(ctx.chat.id);
+    const chatId = getPrivateChatId(ctx);
+    if (chatId !== undefined) {
+      activeChats.add(chatId);
+      await ensureTelegramClient(chatId);
     }
     await ensureBootstrapped();
     return next();
   });
 
-  bot.start(async (ctx) => {
-    const chatId = ctx.chat?.id;
-    if (!chatId) {
-      return;
-    }
-    const payload = normalizeStartPayload(ctx.startPayload);
+  const handleStartPayload = async (chatId: number, payload: string | undefined, ctx: Context): Promise<void> => {
     if (payload?.startsWith(STREAM_INFO_PAYLOAD_PREFIX)) {
       const extensionValue = payload.slice(STREAM_INFO_PAYLOAD_PREFIX.length) || 'unknown';
       await ctx.reply(
@@ -723,11 +747,20 @@ export const createTelegramBot = (botToken: string, providedConfig: Config): Tel
     }
     await sendStartMessage(chatId, (text, extra) => ctx.reply(text, withDisabledPreview(extra)));
     await ctx.reply(translateForChat(chatId, 'search.prompt'), withDisabledPreview());
+  };
+
+  bot.start(async (ctx) => {
+    const chatId = getPrivateChatId(ctx);
+    if (chatId === undefined) {
+      return;
+    }
+    const payload = normalizeStartPayload(ctx.startPayload);
+    await handleStartPayload(chatId, payload, ctx);
   });
 
   bot.command('help', async (ctx) => {
-    const chatId = ctx.chat?.id;
-    if (!chatId) {
+    const chatId = getPrivateChatId(ctx);
+    if (chatId === undefined) {
       return;
     }
     const howItWorks = translateForChat(chatId, 'common.howItWorksHtml');
@@ -737,19 +770,16 @@ export const createTelegramBot = (botToken: string, providedConfig: Config): Tel
   });
 
   bot.command('search', async (ctx) => {
-    const chatId = ctx.chat?.id;
-    if (!chatId) {
+    const chatId = getPrivateChatId(ctx);
+    if (chatId === undefined) {
       return;
     }
     await ctx.reply(translateForChat(chatId, 'search.prompt'), withDisabledPreview());
   });
 
   bot.on('message', async (ctx, next) => {
-    const chatId = ctx.chat?.id;
-    if (!chatId) {
-      return next();
-    }
-    if (ctx.chat.type !== 'private') {
+    const chatId = getPrivateChatId(ctx);
+    if (chatId === undefined) {
       return next();
     }
     const message = ctx.message;
@@ -791,8 +821,8 @@ export const createTelegramBot = (botToken: string, providedConfig: Config): Tel
   });
 
   bot.command('jobs', async (ctx) => {
-    const chatId = ctx.chat?.id;
-    if (!chatId) {
+    const chatId = getPrivateChatId(ctx);
+    if (chatId === undefined) {
       return;
     }
     const clientId = await ensureTelegramClient(chatId);
@@ -803,8 +833,8 @@ export const createTelegramBot = (botToken: string, providedConfig: Config): Tel
     const match = ctx.match as RegExpExecArray | undefined;
     const rawPage = match?.[1];
     const requestedPage = Number.parseInt(rawPage ?? '', 10);
-    const chatId = ctx.chat?.id;
-    if (!chatId || Number.isNaN(requestedPage)) {
+    const chatId = getPrivateChatId(ctx);
+    if (chatId === undefined || Number.isNaN(requestedPage)) {
       await safeAnswerCallback(ctx);
       return;
     }
@@ -823,8 +853,8 @@ export const createTelegramBot = (botToken: string, providedConfig: Config): Tel
   bot.action(new RegExp(`^${DOWNLOAD_CONFIRM_PREFIX}(.+)$`), async (ctx) => {
     const match = ctx.match as RegExpExecArray | undefined;
     const rawToken = match?.[1] ? decodeURIComponent(match[1]) : undefined;
-    const chatId = ctx.chat?.id;
-    if (!chatId || !rawToken) {
+    const chatId = getPrivateChatId(ctx);
+    if (chatId === undefined || !rawToken) {
       await safeAnswerCallback(ctx);
       return;
     }
@@ -835,7 +865,11 @@ export const createTelegramBot = (botToken: string, providedConfig: Config): Tel
       await ctx.reply(translate('search.expired', locale), withDisabledPreview());
       return;
     }
-    const baseResult = resolveBaseResult(chatId, parsed);
+    const baseResult = resolveSessionResult(chatId, parsed);
+    if (!baseResult) {
+      await ctx.reply(translate('search.expired', locale), withDisabledPreview());
+      return;
+    }
     let detail: SearchResultDetail | undefined;
     try {
       const fetchedDetail = await downloadService.getSearchResultDetail(baseResult);
@@ -904,8 +938,8 @@ export const createTelegramBot = (botToken: string, providedConfig: Config): Tel
     const match = ctx.match as RegExpExecArray | undefined;
     const rawId = match?.[1];
     const jobId = rawId ? decodeURIComponent(rawId) : undefined;
-    const chatId = ctx.chat?.id;
-    if (!jobId || !chatId) {
+    const chatId = getPrivateChatId(ctx);
+    if (!jobId || chatId === undefined) {
       await safeAnswerCallback(ctx);
       return;
     }
@@ -920,8 +954,8 @@ export const createTelegramBot = (botToken: string, providedConfig: Config): Tel
     const match = ctx.match as RegExpExecArray | undefined;
     const rawId = match?.[1];
     const jobId = rawId ? decodeURIComponent(rawId) : undefined;
-    const chatId = ctx.chat?.id;
-    if (!jobId || !chatId) {
+    const chatId = getPrivateChatId(ctx);
+    if (!jobId || chatId === undefined) {
       await safeAnswerCallback(ctx);
       return;
     }
@@ -950,8 +984,8 @@ export const createTelegramBot = (botToken: string, providedConfig: Config): Tel
     const match = ctx.match as RegExpExecArray | undefined;
     const rawId = match?.[1];
     const jobId = rawId ? decodeURIComponent(rawId) : undefined;
-    const chatId = ctx.chat?.id;
-    if (!jobId || !chatId) {
+    const chatId = getPrivateChatId(ctx);
+    if (!jobId || chatId === undefined) {
       await safeAnswerCallback(ctx);
       return;
     }
@@ -983,8 +1017,8 @@ export const createTelegramBot = (botToken: string, providedConfig: Config): Tel
   bot.action(/^set-locale:(\w+)$/i, async (ctx) => {
     const match = ctx.match as RegExpExecArray | undefined;
     const requested = match?.[1]?.toLowerCase();
-    const chatId = ctx.chat?.id;
-    if (!chatId || !requested || !isSupportedLocale(requested)) {
+    const chatId = getPrivateChatId(ctx);
+    if (chatId === undefined || !requested || !isSupportedLocale(requested)) {
       await safeAnswerCallback(ctx);
       return;
     }
@@ -1004,19 +1038,14 @@ export const createTelegramBot = (botToken: string, providedConfig: Config): Tel
     await sendStartMessage(chatId);
   });
 
-  downloadService.on('ready', (jobs) => {
-    jobs.forEach((job) => trackedJobs.set(job.jobId, job));
-  });
-
   downloadService.on('jobUpdated', (job) => {
-    const previous = trackedJobs.get(job.jobId);
-    trackedJobs.set(job.jobId, job);
-    const firstSeenCompleted = !previous && job.lastKnownStatus === 'completed';
-    const transitionedToCompleted =
-      !!previous && previous.lastKnownStatus !== 'completed' && job.lastKnownStatus === 'completed';
-    if (!firstSeenCompleted && !transitionedToCompleted) {
+    if (job.lastKnownStatus !== 'completed') {
       return;
     }
+    if (completedJobs.has(job.jobId)) {
+      return;
+    }
+    completedJobs.add(job.jobId);
     void notifyJobOwner(
       job,
       (chatId) => {
@@ -1032,7 +1061,7 @@ export const createTelegramBot = (botToken: string, providedConfig: Config): Tel
   });
 
   downloadService.on('jobRemoved', (job) => {
-    trackedJobs.delete(job.jobId);
+    completedJobs.delete(job.jobId);
     const suppressedClientId = removalSuppressions.get(job.jobId);
     removalSuppressions.delete(job.jobId);
     if (suppressedClientId && suppressedClientId === job.clientId) {
