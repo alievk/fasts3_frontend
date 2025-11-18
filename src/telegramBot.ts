@@ -437,10 +437,17 @@ const formatJobDetail = (job: OwnedJob, locale: string): string => {
   const downloadLabel = translate('job.links.download', locale);
   const watchLabel = translate('job.links.watch', locale);
   let linksLine: string | null = null;
+  const links: string[] = [];
+  if (downloadUrl) {
+    const downloadLink = `<a href="${escapeHtml(downloadUrl)}">${escapeHtml(downloadLabel)}</a>`;
+    links.push(`⏬ ${downloadLink}`);
+  }
   if (playerUrl) {
-    linksLine = `<a href="${escapeHtml(playerUrl)}">${escapeHtml(watchLabel)}</a>`;
-  } else if (downloadUrl) {
-    linksLine = `<a href="${escapeHtml(downloadUrl)}">${escapeHtml(downloadLabel)}</a>`;
+    const watchLink = `<a href="${escapeHtml(playerUrl)}">${escapeHtml(watchLabel)}</a>`;
+    links.push(`🍿 ${watchLink}`);
+  }
+  if (links.length > 0) {
+    linksLine = links.join(' ');
   }
   const lines = [
     `<b>${escapeHtml(title)}</b>`,
