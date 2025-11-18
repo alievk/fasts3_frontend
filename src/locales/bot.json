@@ -2,7 +2,7 @@
   "ru": {
     "commands.searchDescription": "Искать фильмы",
     "commands.jobsDescription": "Управлять загрузками",
-    "commands.helpDescription": "Как пользоваться ботом",
+    "commands.helpDescription": "Помощь",
     "common.unknown": "неизвестно",
     "common.yes": "да",
     "common.no": "нет",
@@ -98,7 +98,7 @@
   "en": {
     "commands.searchDescription": "Search torrents",
     "commands.jobsDescription": "Manage downloads",
-    "commands.helpDescription": "How to use the bot",
+    "commands.helpDescription": "Help",
     "common.unknown": "unknown",
     "common.yes": "yes",
     "common.no": "no",
