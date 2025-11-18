@@ -96,6 +96,15 @@
       "\n",
       "В VLC выбери Обзор -> Локальные файлы -> На iPhone -> Загрузки."
     ],
+    "howStreamAirplay.messageHtml": [
+      "<b>📺 Как стримить через AirPlay</b>\n",
+      "\n",
+      "Стримить можно только фильмы в формате <b>mp4</b> и только в <b>Safari</b>.\n",
+      "\n",
+      "- выбери фильм (/jobs) и открой ссылку <b>Смотреть</b> в Safari\n",
+      "- в правом нижнем углу видео нажми иконку с квадратиком и треугольником\n",
+      "- нажми на иконку и выбери куда стримить"
+    ],
     "jobs.listEmpty": "Нет активных или завершённых заданий. Запусти /search, чтобы начать.",
     "jobs.actions.refresh": "Обновить",
     "jobs.actions.delete": "Удалить",
@@ -216,6 +225,15 @@
       "The basic solution is <a href=\"https://apps.apple.com/app/vlc-for-mobile/id650377962\">VLC Player</a>. It supports many formats: mov, mkv, avi, and more.\n",
       "\n",
       "In VLC, go to Browse -> Local Files -> On My iPhone -> Downloads."
+    ],
+    "howStreamAirplay.messageHtml": [
+      "<b>📺 How to stream via AirPlay</b>\n",
+      "\n",
+      "You can only stream movies in <b>mp4</b> format and only in <b>Safari</b>.\n",
+      "\n",
+      "- choose a movie (/jobs) and open the <b>Watch</b> link in Safari\n",
+      "- in the bottom-right corner of the video, tap the icon with a square and triangle\n",
+      "- tap the icon again and choose where to stream"
     ],
     "jobs.listEmpty": "No active or completed jobs. Run /search to start one.",
     "jobs.actions.refresh": "Refresh",
