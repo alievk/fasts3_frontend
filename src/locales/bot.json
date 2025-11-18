@@ -105,8 +105,21 @@
     "common.yes": "yes",
     "common.no": "no",
     "common.sizeGb": "{value}Gb",
-    "common.howItWorksHtml": "<b>How I work:</b>\n1. send me the movie title\n2. choose a suitable torrent\n3. start the download\n4. get a fast download link\n5. watch online or download to any device 🍿",
-    "common.advantagesHtml": "<b>Why I'm great:</b>\n- a large selection of movies in any format and quality\n- fast downloads\n- no VPN required\n- on iPhone you can stream via AirPlay",
+    "common.howItWorksHtml": [
+      "<b>How I work:</b>\n",
+      "1. send me the movie title\n",
+      "2. choose a suitable torrent\n",
+      "3. start the download\n",
+      "4. get a fast download link\n",
+      "5. watch online or download to any device 🍿"
+    ],
+    "common.advantagesHtml": [
+      "<b>Why I'm great:</b>\n",
+      "- a large selection of movies in any format and quality\n",
+      "- fast downloads\n",
+      "- no VPN required\n",
+      "- you can stream via AirPlay to your TV"
+    ],
     "health.checkFailed": "Backend health check failed: {message}",
     "service.error": "Service error: {message}",
     "search.prompt": "Send me the movie title.",
@@ -135,9 +148,26 @@
     "search.detailConfirm": "Start download",
     "search.detailUnavailable": "Details are unavailable for this result ({provider}: {id}).",
     "search.detailFailed": "Failed to fetch details: {message}",
-    "faq.messageHtml": "<b>I downloaded a movie. Why can't I watch it online?</b>\nThe browser only supports mp4 format, but your movie is in a different format.\n\n<b>Do I need a VPN to watch and download?</b>\nNo, you don't.\n\n<b>How do I download a movie to my phone?</b>\n<a href=\"123\">Guide</a>",
-    "start.messageHtml": "Hi, I'm a bot for finding and downloading movies 🎬\n\n{howItWorks}\n\n{advantages}\n\nMore: /help",
-    "help.messageHtml": "{howItWorks}\n\n{faq}",
+    "faq.messageHtml": [
+      "<b>- Do I need a VPN to watch and download in Russia?</b>\n",
+      "- No, you don't.\n",
+      "\n",
+      "<b>- How do I download a movie to my phone?</b>\n",
+      "- Use this: /how_download_phone\n",
+      "\n",
+      "<b>- I downloaded a movie. Why can't I watch it online?</b>\n",
+      "- The browser only supports mp4 format, but your movie is in a different format.\n",
+      "\n",
+      "<b>- How do I stream via AirPlay?</b>\n",
+      "- Use this: /how_stream_airplay\n"
+    ],
+    "start.messageHtml": [
+      "Hi, I'm a bot for finding and downloading movies 🎬\n\n",
+      "{howItWorks}\n\n",
+      "{advantages}\n\n",
+      "Help: /help"
+    ],
+    "help.messageHtml": "{faq}",
     "start.switchToEnglish": "Switch to English",
     "start.switchToRussian": "Switch to Russian",
     "jobs.listEmpty": "No active or completed jobs. Run /search to start one.",
