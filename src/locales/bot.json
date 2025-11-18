@@ -54,13 +54,16 @@
       "- Нет, не нужен.\n",
       "\n",
       "<b>- Как скачать фильм на телефон?</b>\n",
-      "- Вот так: /how_download_phone\n",
+      "- /how_download_phone\n",
       "\n",
       "<b>- Я скачал фильм. Почему я не могу посмотреть его онлайн?</b>\n",
       "- Браузер поддерживает только mp4 формат, у вас фильм в другом формате.\n",
       "\n",
+      "<b>- Как смотреть фильмы на телефоне?</b>\n",
+      "- /how_watch_on_phone\n",
+      "\n",
       "<b>- Как стримить через AirPlay?</b>\n",
-      "- Вот так: /how_stream_airplay\n"
+      "- /how_stream_airplay\n"
     ],
     "start.messageHtml": [
       "Привет, я бот для поиска и скачивания фильмов 🎬\n\n",
@@ -85,6 +88,13 @@
       "В Safari: в адресной строке слева нажми на иконку -> Загрузки\n",
       "\n",
       "В Файлах: Обзор -> На iPhone -> Загрузки"
+    ],
+    "howWatchOnPhone.messageHtml": [
+      "<b>📱 Как смотреть фильмы на iPhone</b>\n",
+      "\n",
+      "Базовое решение — <a href=\"https://apps.apple.com/app/vlc-for-mobile/id650377962\">VLC Player</a>. Он поддерживает разные форматы: mov, mkv, avi и т.д.\n",
+      "\n",
+      "В VLC выбери Обзор -> Локальные файлы -> На iPhone -> Загрузки."
     ],
     "jobs.listEmpty": "Нет активных или завершённых заданий. Запусти /search, чтобы начать.",
     "jobs.actions.refresh": "Обновить",
@@ -199,6 +209,13 @@
       "In Safari: tap the icon on the left in the address bar -> Downloads\n",
       "\n",
       "In Files: Browse -> On My iPhone -> Downloads"
+    ],
+    "howWatchOnPhone.messageHtml": [
+      "<b>📱 How to watch movies on iPhone</b>\n",
+      "\n",
+      "The basic solution is <a href=\"https://apps.apple.com/app/vlc-for-mobile/id650377962\">VLC Player</a>. It supports many formats: mov, mkv, avi, and more.\n",
+      "\n",
+      "In VLC, go to Browse -> Local Files -> On My iPhone -> Downloads."
     ],
     "jobs.listEmpty": "No active or completed jobs. Run /search to start one.",
     "jobs.actions.refresh": "Refresh",

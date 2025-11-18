@@ -806,6 +806,15 @@ export const createTelegramBot = (
     await ctx.reply(text, withDisabledPreview({ parse_mode: 'HTML' as const }));
   });
 
+  bot.command('how_watch_on_phone', async (ctx) => {
+    const chatId = getPrivateChatId(ctx);
+    if (chatId === undefined) {
+      return;
+    }
+    const text = translateForChat(chatId, 'howWatchOnPhone.messageHtml');
+    await ctx.reply(text, withDisabledPreview({ parse_mode: 'HTML' as const }));
+  });
+
   bot.command('lang', async (ctx) => {
     const chatId = getPrivateChatId(ctx);
     if (chatId === undefined) {
