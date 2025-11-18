@@ -141,11 +141,11 @@ const getBotUsername = (): string => {
   return botUsername;
 };
 
-const getBotCommands = () => [
-  { command: 'search', description: translateDefault('commands.searchDescription') },
-  { command: 'jobs', description: translateDefault('commands.jobsDescription') },
-  { command: 'help', description: translateDefault('commands.helpDescription') },
-  { command: 'lang', description: translateDefault('commands.langDescription') }
+const getBotCommands = (locale: string) => [
+  { command: 'search', description: translate('commands.searchDescription', locale) },
+  { command: 'jobs', description: translate('commands.jobsDescription', locale) },
+  { command: 'help', description: translate('commands.helpDescription', locale) },
+  { command: 'lang', description: translate('commands.langDescription', locale) }
 ];
 
 const activeChats = new Set<number>();
@@ -1104,7 +1104,14 @@ export const createTelegramBot = (
     if (!botUsername) {
       throw new Error('Bot username is required');
     }
-    await bot.telegram.setMyCommands(getBotCommands());
+    const locales = getOrderedLocales();
+    const baseLocale = defaultLocale;
+    await bot.telegram.setMyCommands(getBotCommands(baseLocale));
+    await Promise.all(
+      locales
+        .filter((locale) => locale !== baseLocale)
+        .map((locale) => bot.telegram.setMyCommands(getBotCommands(locale), { language_code: locale }))
+    );
     await bot.launch();
     console.log('Telegram bot started.');
   };
