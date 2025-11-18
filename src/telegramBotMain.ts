@@ -1,26 +1,77 @@
 import { loadConfig } from './config.js';
 import { createTelegramBot } from './telegramBot.js';
+import type { TelegramBotRuntime } from './telegramBot.js';
 
-const botToken = process.env.TORRENT_TELEGRAM_BOT_TOKEN;
+let runtime: TelegramBotRuntime | undefined;
+let isShuttingDown = false;
 
-if (!botToken) {
-  console.error('Missing TORRENT_TELEGRAM_BOT_TOKEN');
-  process.exit(1);
-}
+const requireEnv = (name: string): string => {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`Missing ${name}`);
+  }
+  return value;
+};
 
-const config = loadConfig();
-const runtime = createTelegramBot(botToken, config);
+const shutdown = async (code: number, reason: string): Promise<void> => {
+  if (isShuttingDown) {
+    return;
+  }
+  isShuttingDown = true;
+  try {
+    if (runtime) {
+      await runtime.stop(reason);
+    }
+  } catch (error) {
+    console.error('Failed during bot shutdown:', error);
+  } finally {
+    process.exit(code);
+  }
+};
 
-runtime.start().catch((error) => {
+const setupSignalHandlers = (): void => {
+  process.once('SIGINT', () => {
+    void shutdown(0, 'SIGINT');
+  });
+  process.once('SIGTERM', () => {
+    void shutdown(0, 'SIGTERM');
+  });
+};
+
+const setupGlobalErrorHandlers = (): void => {
+  process.on('uncaughtException', (error) => {
+    console.error('Uncaught exception in bot process:', error);
+    if (runtime) {
+      void shutdown(1, 'uncaught-exception');
+    } else {
+      process.exit(1);
+    }
+  });
+  process.on('unhandledRejection', (reason) => {
+    console.error('Unhandled rejection in bot process:', reason);
+    if (runtime) {
+      void shutdown(1, 'unhandled-rejection');
+    } else {
+      process.exit(1);
+    }
+  });
+};
+
+const main = async (): Promise<void> => {
+  const botToken = requireEnv('TORRENT_TELEGRAM_BOT_TOKEN');
+  const config = loadConfig();
+  runtime = createTelegramBot(botToken, config);
+  setupSignalHandlers();
+  await runtime.start();
+};
+
+setupGlobalErrorHandlers();
+
+void main().catch((error) => {
   console.error('Failed to start bot:', error);
-  void runtime.stop('startup-failed').finally(() => process.exit(1));
+  if (runtime) {
+    void shutdown(1, 'startup-failed');
+  } else {
+    process.exit(1);
+  }
 });
-
-process.once('SIGINT', () => {
-  void runtime.stop('SIGINT').finally(() => process.exit(0));
-});
-
-process.once('SIGTERM', () => {
-  void runtime.stop('SIGTERM').finally(() => process.exit(0));
-});
-
