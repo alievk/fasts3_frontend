@@ -90,12 +90,6 @@ const translateForChat = (chatId: number | undefined, key: string, params?: Tran
   translate(key, getChatLocale(chatId), params);
 const translateDefault = (key: string, params?: TranslationParams): string => translate(key, defaultLocale, params);
 const getLocaleDisplayName = (locale: string): string => translate('locale.selfName', locale);
-const resolveToggleLocale = (locale: string): string => (locale === 'en' ? PRIMARY_LOCALE : 'en');
-const buildLocaleToggleKeyboard = (locale: string) => {
-  const targetLocale = resolveToggleLocale(locale);
-  const buttonKey = targetLocale === 'en' ? 'start.switchToEnglish' : 'start.switchToRussian';
-  return Markup.inlineKeyboard([Markup.button.callback(translate(buttonKey, locale), `set-locale:${targetLocale}`)]);
-};
 const getOrderedLocales = (): string[] => {
   const available = Object.keys(botTranslations).filter(isSupportedLocale);
   const preferredOrder = ['ru', 'en'];
@@ -948,17 +942,13 @@ export const createTelegramBot = (
         return;
       }
 
-      const titleLine = escapeHtml(
-        translate('downloads.summaryTitle', locale, {
-          title: detail.title ?? baseResult.title
-        })
-      );
-      const jobIdLine = escapeHtml(translate('job.jobIdLine', locale, { jobId: job.jobId }));
-      const hashLine = escapeHtml(translate('job.hashLine', locale, { hash: job.hash }));
+      const jobTitle = detail.title ?? baseResult.title ?? job.hash ?? translate('common.unknown', locale);
+      const uploadingHeading = escapeHtml(translate('downloads.uploadingHeading', locale));
+      const jobTitleLine = `<b>${escapeHtml(jobTitle)}</b>`;
       const statusLabel = escapeHtml(translate('downloads.checkStatusHint', locale));
       const statusLink = `<a href="${escapeHtml(buildStartLink(`${JOB_PAYLOAD_PREFIX}${job.jobId}`))}">${statusLabel}</a>`;
       await ctx.reply(
-        [titleLine, jobIdLine, hashLine, '', statusLink].join('\n'),
+        [uploadingHeading, '', jobTitleLine, '', statusLink].join('\n'),
         withDisabledPreview({ parse_mode: 'HTML' as const })
       );
     } catch (error) {
