@@ -10,7 +10,7 @@
     "start": "node dist/player/main.js",
     "lint": "tsc --noEmit",
     "test": "tsx --test src/__tests__/**/*.test.ts",
-    "bot": "tsx src/telegramBot.ts",
+    "bot": "tsx src/telegramBotMain.ts",
     "serve-player": "node scripts/servePlayer.mjs"
   },
   "dependencies": {

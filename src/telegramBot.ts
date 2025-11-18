@@ -1,10 +1,10 @@
 import { Agent as HttpsAgent } from 'node:https';
 import { Telegraf, Markup } from 'telegraf';
 import type { Context } from 'telegraf';
-import { loadConfig } from './config.js';
 import { createApiClient } from './apiClient.js';
 import { DownloadService } from './downloadService.js';
 import { Poller } from './poller.js';
+import type { ApiClient, ClientRegistry, Config, SearchResultPipeline } from './types.js';
 import { JobStatus, OwnedJob, SearchResult, SearchResultDetail } from './types.js';
 import { normalizeHash } from './hashUtils.js';
 import { createSearchPipeline } from './searchPipeline.js';
@@ -26,20 +26,13 @@ const withDisabledPreviewEdit = (extra?: EditMessageTextExtra): EditMessageTextE
     disable_web_page_preview: true
   } as EditMessageTextExtra);
 
-const botToken = process.env.TORRENT_TELEGRAM_BOT_TOKEN;
-
-if (!botToken) {
-  console.error('Missing TORRENT_TELEGRAM_BOT_TOKEN');
-  process.exit(1);
-}
-
-const config = loadConfig();
+let config: Config;
 const botTranslations = botTranslationsData as Record<string, Record<string, string | string[]>>;
 type TranslationParams = Record<string, string | number>;
 const PRIMARY_LOCALE = 'ru';
 const isSupportedLocale = (locale?: string): locale is string =>
   Boolean(locale && Object.prototype.hasOwnProperty.call(botTranslations, locale));
-const defaultLocale = isSupportedLocale(config.botLocale) ? config.botLocale : PRIMARY_LOCALE;
+let defaultLocale = PRIMARY_LOCALE;
 const normalizeTranslationValue = (value: string | string[]): string => (Array.isArray(value) ? value.join('') : value);
 const resolveTemplate = (locale: string, key: string): string | undefined => {
   const value = botTranslations[locale]?.[key];
@@ -107,13 +100,12 @@ const sendStartMessage = async (
   }
   await sendTelegramMessage(chatId, content.text, content.extra);
 };
-const apiClient = createApiClient();
-const clientRegistry = createClientRegistry(config.clientDbPath);
-const searchPipeline = createSearchPipeline(config);
-const downloadService = new DownloadService(apiClient, clientRegistry, config.searchLimit, searchPipeline);
-const poller = new Poller(downloadService, config.pollingIntervalMs);
-const telegramIpv4Agent = new HttpsAgent({ family: 4 });
-const bot = new Telegraf(botToken, { telegram: { agent: telegramIpv4Agent } });
+let apiClient: ApiClient;
+let clientRegistry: ClientRegistry;
+let searchPipeline: SearchResultPipeline;
+let downloadService: DownloadService;
+let poller: Poller;
+let bot: Telegraf;
 let botUsername: string | undefined;
 const getBotUsername = (): string => {
   if (!botUsername) {
@@ -122,7 +114,7 @@ const getBotUsername = (): string => {
   return botUsername;
 };
 
-const botCommands = [
+const getBotCommands = () => [
   { command: 'search', description: translateDefault('commands.searchDescription') },
   { command: 'jobs', description: translateDefault('commands.jobsDescription') },
   { command: 'help', description: translateDefault('commands.helpDescription') }
@@ -136,7 +128,7 @@ type SearchSession = {
   messageId?: number;
 };
 
-const searchPageSize = config.searchPageSize;
+let searchPageSize = 1;
 const DETAIL_PAYLOAD_PREFIX = 'details_';
 const JOB_PAYLOAD_PREFIX = 'job_';
 const DOWNLOAD_CONFIRM_PREFIX = 'confirm:';
@@ -669,393 +661,408 @@ const sendJobList = async (chatId: number, clientId: string) => {
   await sendTelegramMessage(chatId, text, { parse_mode: 'HTML' as const });
 };
 
-bot.use(async (ctx, next) => {
-  if (ctx.chat) {
-    activeChats.add(ctx.chat.id);
-    await ensureTelegramClient(ctx.chat.id);
-  }
-  await ensureBootstrapped();
-  return next();
-});
+export type TelegramBotRuntime = {
+  bot: Telegraf;
+  start: () => Promise<void>;
+  stop: (reason: string) => Promise<void>;
+};
 
-bot.start(async (ctx) => {
-  const chatId = ctx.chat?.id;
-  if (!chatId) {
-    return;
-  }
-  const payload = normalizeStartPayload(ctx.startPayload);
-  if (payload?.startsWith(STREAM_INFO_PAYLOAD_PREFIX)) {
-    const extensionValue = payload.slice(STREAM_INFO_PAYLOAD_PREFIX.length) || 'unknown';
-    await ctx.reply(
-      translateForChat(chatId, 'search.streamExplanation', { extension: extensionValue }),
-      withDisabledPreview()
-    );
-    return;
-  }
-  if (payload?.startsWith(CANT_FIND_HELP_PAYLOAD_PREFIX)) {
-    await ctx.reply(translateForChat(chatId, 'search.cantFindHint'), withDisabledPreview());
-    return;
-  }
-  const jobPayload = parseJobPayload(payload);
-  if (jobPayload) {
-    const clientId = await ensureTelegramClient(chatId);
-    await sendJobDetailMessage(chatId, clientId, jobPayload, (text, extra) =>
-      ctx.reply(text, withDisabledPreview(extra))
-    );
-    return;
-  }
-  const payloadToken = parseDetailPayload(payload);
-  if (payloadToken) {
-    await startDownloadFromToken(chatId, payloadToken, (text, extra) =>
-      ctx.reply(text, withDisabledPreview(extra))
-    );
-    return;
-  }
-  await sendStartMessage(chatId, (text, extra) => ctx.reply(text, withDisabledPreview(extra)));
-  await ctx.reply(translateForChat(chatId, 'search.prompt'), withDisabledPreview());
-});
+export const createTelegramBot = (botToken: string, providedConfig: Config): TelegramBotRuntime => {
+  config = providedConfig;
+  defaultLocale = isSupportedLocale(config.botLocale) ? config.botLocale : PRIMARY_LOCALE;
+  searchPageSize = config.searchPageSize;
+  apiClient = createApiClient();
+  clientRegistry = createClientRegistry(config.clientDbPath);
+  searchPipeline = createSearchPipeline(config);
+  downloadService = new DownloadService(apiClient, clientRegistry, config.searchLimit, searchPipeline);
+  poller = new Poller(downloadService, config.pollingIntervalMs);
+  const telegramIpv4Agent = new HttpsAgent({ family: 4 });
+  bot = new Telegraf(botToken, { telegram: { agent: telegramIpv4Agent } });
 
-bot.command('help', async (ctx) => {
-  const chatId = ctx.chat?.id;
-  if (!chatId) {
-    return;
-  }
-  const howItWorks = translateForChat(chatId, 'common.howItWorksHtml');
-  const faq = translateForChat(chatId, 'faq.messageHtml');
-  const text = translateForChat(chatId, 'help.messageHtml', { howItWorks, faq });
-  await ctx.reply(text, withDisabledPreview({ parse_mode: 'HTML' as const }));
-});
+  bot.use(async (ctx, next) => {
+    if (ctx.chat) {
+      activeChats.add(ctx.chat.id);
+      await ensureTelegramClient(ctx.chat.id);
+    }
+    await ensureBootstrapped();
+    return next();
+  });
 
-bot.command('search', async (ctx) => {
-  const chatId = ctx.chat?.id;
-  if (!chatId) {
-    return;
-  }
-  await ctx.reply(translateForChat(chatId, 'search.prompt'), withDisabledPreview());
-});
-
-bot.on('message', async (ctx, next) => {
-  const chatId = ctx.chat?.id;
-  if (!chatId) {
-    return next();
-  }
-  if (ctx.chat.type !== 'private') {
-    return next();
-  }
-  const message = ctx.message;
-  const textMessage = message as { text?: string; entities?: { type: string; offset: number }[] } | undefined;
-  if (!textMessage || typeof textMessage.text !== 'string') {
-    return next();
-  }
-  const text = textMessage.text;
-  const isCommand =
-    textMessage.entities?.some((entity) => entity.type === 'bot_command' && entity.offset === 0) ?? text.startsWith('/');
-  if (isCommand) {
-    return next();
-  }
-  const query = text.trim();
-  if (!query) {
-    await ctx.reply(translateForChat(chatId, 'search.prompt'), withDisabledPreview());
-    return;
-  }
-  try {
-    await ctx.reply(translateForChat(chatId, 'search.searching', { query }), withDisabledPreview());
-    const rawResults = await downloadService.search(query);
-    if (rawResults.length === 0) {
-      await ctx.reply(translateForChat(chatId, 'search.noResults', { query }), withDisabledPreview());
+  bot.start(async (ctx) => {
+    const chatId = ctx.chat?.id;
+    if (!chatId) {
       return;
     }
-    const locale = getChatLocale(chatId);
-    const pageInfo = buildSearchPage(rawResults, 0, locale);
-    const previousMessageId = searchSessions.get(chatId)?.messageId;
-    const sentMessage = await ctx.reply(pageInfo.text, withDisabledPreview(pageInfo.extra));
-    searchSessions.set(chatId, { results: rawResults, page: pageInfo.page, messageId: sentMessage.message_id });
-    if (previousMessageId !== undefined) {
-      await deleteSearchMessage(chatId, previousMessageId);
-    }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    await ctx.reply(translateForChat(chatId, 'search.failed', { message }), withDisabledPreview());
-  }
-});
-
-bot.command('jobs', async (ctx) => {
-  const chatId = ctx.chat?.id;
-  if (!chatId) {
-    return;
-  }
-  const clientId = await ensureTelegramClient(chatId);
-  await sendJobList(chatId, clientId);
-});
-
-bot.action(/^page:(\d+)$/, async (ctx) => {
-  const match = ctx.match as RegExpExecArray | undefined;
-  const rawPage = match?.[1];
-  const requestedPage = Number.parseInt(rawPage ?? '', 10);
-  const chatId = ctx.chat?.id;
-  if (!chatId || Number.isNaN(requestedPage)) {
-    await safeAnswerCallback(ctx);
-    return;
-  }
-  const session = searchSessions.get(chatId);
-  const messageId = ctx.callbackQuery?.message?.message_id;
-  if (!session || !messageId || session.messageId !== messageId) {
-    await safeAnswerCallback(ctx, translateForChat(chatId, 'search.expired'));
-    return;
-  }
-  const pageInfo = buildSearchPage(session.results, requestedPage, getChatLocale(chatId));
-  session.page = pageInfo.page;
-  await safeAnswerCallback(ctx);
-  await safeEditMessageText(ctx, pageInfo.text, withDisabledPreviewEdit(pageInfo.extra));
-});
-
-bot.action(new RegExp(`^${DOWNLOAD_CONFIRM_PREFIX}(.+)$`), async (ctx) => {
-  const match = ctx.match as RegExpExecArray | undefined;
-  const rawToken = match?.[1] ? decodeURIComponent(match[1]) : undefined;
-  const chatId = ctx.chat?.id;
-  if (!chatId || !rawToken) {
-    await safeAnswerCallback(ctx);
-    return;
-  }
-  await safeAnswerCallback(ctx);
-  const locale = getChatLocale(chatId);
-  const parsed = parseDetailToken(rawToken);
-  if (!parsed) {
-    await ctx.reply(translate('search.expired', locale), withDisabledPreview());
-    return;
-  }
-  const baseResult = resolveBaseResult(chatId, parsed);
-  let detail: SearchResultDetail | undefined;
-  try {
-    const fetchedDetail = await downloadService.getSearchResultDetail(baseResult);
-    if (fetchedDetail) {
-      detail = normalizeDetailHash(fetchedDetail);
-    }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    await ctx.reply(translate('search.detailFailed', locale, { message }), withDisabledPreview());
-    return;
-  }
-  if (!detail) {
-    await ctx.reply(
-      translate('search.detailUnavailable', locale, {
-        provider: baseResult.providerLabel || baseResult.provider,
-        id: baseResult.id
-      }),
-      withDisabledPreview()
-    );
-    return;
-  }
-  const clientId = await ensureTelegramClient(chatId);
-  try {
-    const existingJobs = downloadService.getJobsForClient(clientId);
-    const knownJobIds = new Set(existingJobs.map((job) => job.jobId));
-    const job = await downloadService.startDownload(detail, clientId);
-    const isExistingJob = knownJobIds.has(job.jobId);
-
-    if (isExistingJob) {
-      const keyboard = buildJobActionsKeyboard(job, locale);
+    const payload = normalizeStartPayload(ctx.startPayload);
+    if (payload?.startsWith(STREAM_INFO_PAYLOAD_PREFIX)) {
+      const extensionValue = payload.slice(STREAM_INFO_PAYLOAD_PREFIX.length) || 'unknown';
       await ctx.reply(
-        formatJobDetail(job, locale),
-        withDisabledPreview({ ...keyboard, parse_mode: 'HTML' as const })
+        translateForChat(chatId, 'search.streamExplanation', { extension: extensionValue }),
+        withDisabledPreview()
       );
       return;
     }
-
-    if (job.lastKnownStatus === 'completed') {
-      // Case 2: instantly completed job; rely on completion notification.
+    if (payload?.startsWith(CANT_FIND_HELP_PAYLOAD_PREFIX)) {
+      await ctx.reply(translateForChat(chatId, 'search.cantFindHint'), withDisabledPreview());
       return;
     }
+    const jobPayload = parseJobPayload(payload);
+    if (jobPayload) {
+      const clientId = await ensureTelegramClient(chatId);
+      await sendJobDetailMessage(chatId, clientId, jobPayload, (text, extra) =>
+        ctx.reply(text, withDisabledPreview(extra))
+      );
+      return;
+    }
+    const payloadToken = parseDetailPayload(payload);
+    if (payloadToken) {
+      await startDownloadFromToken(chatId, payloadToken, (text, extra) =>
+        ctx.reply(text, withDisabledPreview(extra))
+      );
+      return;
+    }
+    await sendStartMessage(chatId, (text, extra) => ctx.reply(text, withDisabledPreview(extra)));
+    await ctx.reply(translateForChat(chatId, 'search.prompt'), withDisabledPreview());
+  });
 
-    const titleLine = escapeHtml(
-      translate('downloads.summaryTitle', locale, {
-        title: detail.title ?? baseResult.title
-      })
+  bot.command('help', async (ctx) => {
+    const chatId = ctx.chat?.id;
+    if (!chatId) {
+      return;
+    }
+    const howItWorks = translateForChat(chatId, 'common.howItWorksHtml');
+    const faq = translateForChat(chatId, 'faq.messageHtml');
+    const text = translateForChat(chatId, 'help.messageHtml', { howItWorks, faq });
+    await ctx.reply(text, withDisabledPreview({ parse_mode: 'HTML' as const }));
+  });
+
+  bot.command('search', async (ctx) => {
+    const chatId = ctx.chat?.id;
+    if (!chatId) {
+      return;
+    }
+    await ctx.reply(translateForChat(chatId, 'search.prompt'), withDisabledPreview());
+  });
+
+  bot.on('message', async (ctx, next) => {
+    const chatId = ctx.chat?.id;
+    if (!chatId) {
+      return next();
+    }
+    if (ctx.chat.type !== 'private') {
+      return next();
+    }
+    const message = ctx.message;
+    const textMessage = message as { text?: string; entities?: { type: string; offset: number }[] } | undefined;
+    if (!textMessage || typeof textMessage.text !== 'string') {
+      return next();
+    }
+    const text = textMessage.text;
+    const isCommand =
+      textMessage.entities?.some((entity) => entity.type === 'bot_command' && entity.offset === 0) ??
+      text.startsWith('/');
+    if (isCommand) {
+      return next();
+    }
+    const query = text.trim();
+    if (!query) {
+      await ctx.reply(translateForChat(chatId, 'search.prompt'), withDisabledPreview());
+      return;
+    }
+    try {
+      await ctx.reply(translateForChat(chatId, 'search.searching', { query }), withDisabledPreview());
+      const rawResults = await downloadService.search(query);
+      if (rawResults.length === 0) {
+        await ctx.reply(translateForChat(chatId, 'search.noResults', { query }), withDisabledPreview());
+        return;
+      }
+      const locale = getChatLocale(chatId);
+      const pageInfo = buildSearchPage(rawResults, 0, locale);
+      const previousMessageId = searchSessions.get(chatId)?.messageId;
+      const sentMessage = await ctx.reply(pageInfo.text, withDisabledPreview(pageInfo.extra));
+      searchSessions.set(chatId, { results: rawResults, page: pageInfo.page, messageId: sentMessage.message_id });
+      if (previousMessageId !== undefined) {
+        await deleteSearchMessage(chatId, previousMessageId);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await ctx.reply(translateForChat(chatId, 'search.failed', { message }), withDisabledPreview());
+    }
+  });
+
+  bot.command('jobs', async (ctx) => {
+    const chatId = ctx.chat?.id;
+    if (!chatId) {
+      return;
+    }
+    const clientId = await ensureTelegramClient(chatId);
+    await sendJobList(chatId, clientId);
+  });
+
+  bot.action(/^page:(\d+)$/, async (ctx) => {
+    const match = ctx.match as RegExpExecArray | undefined;
+    const rawPage = match?.[1];
+    const requestedPage = Number.parseInt(rawPage ?? '', 10);
+    const chatId = ctx.chat?.id;
+    if (!chatId || Number.isNaN(requestedPage)) {
+      await safeAnswerCallback(ctx);
+      return;
+    }
+    const session = searchSessions.get(chatId);
+    const messageId = ctx.callbackQuery?.message?.message_id;
+    if (!session || !messageId || session.messageId !== messageId) {
+      await safeAnswerCallback(ctx, translateForChat(chatId, 'search.expired'));
+      return;
+    }
+    const pageInfo = buildSearchPage(session.results, requestedPage, getChatLocale(chatId));
+    session.page = pageInfo.page;
+    await safeAnswerCallback(ctx);
+    await safeEditMessageText(ctx, pageInfo.text, withDisabledPreviewEdit(pageInfo.extra));
+  });
+
+  bot.action(new RegExp(`^${DOWNLOAD_CONFIRM_PREFIX}(.+)$`), async (ctx) => {
+    const match = ctx.match as RegExpExecArray | undefined;
+    const rawToken = match?.[1] ? decodeURIComponent(match[1]) : undefined;
+    const chatId = ctx.chat?.id;
+    if (!chatId || !rawToken) {
+      await safeAnswerCallback(ctx);
+      return;
+    }
+    await safeAnswerCallback(ctx);
+    const locale = getChatLocale(chatId);
+    const parsed = parseDetailToken(rawToken);
+    if (!parsed) {
+      await ctx.reply(translate('search.expired', locale), withDisabledPreview());
+      return;
+    }
+    const baseResult = resolveBaseResult(chatId, parsed);
+    let detail: SearchResultDetail | undefined;
+    try {
+      const fetchedDetail = await downloadService.getSearchResultDetail(baseResult);
+      if (fetchedDetail) {
+        detail = normalizeDetailHash(fetchedDetail);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await ctx.reply(translate('search.detailFailed', locale, { message }), withDisabledPreview());
+      return;
+    }
+    if (!detail) {
+      await ctx.reply(
+        translate('search.detailUnavailable', locale, {
+          provider: baseResult.providerLabel || baseResult.provider,
+          id: baseResult.id
+        }),
+        withDisabledPreview()
+      );
+      return;
+    }
+    const clientId = await ensureTelegramClient(chatId);
+    try {
+      const existingJobs = downloadService.getJobsForClient(clientId);
+      const knownJobIds = new Set(existingJobs.map((job) => job.jobId));
+      const job = await downloadService.startDownload(detail, clientId);
+      const isExistingJob = knownJobIds.has(job.jobId);
+
+      if (isExistingJob) {
+        const keyboard = buildJobActionsKeyboard(job, locale);
+        await ctx.reply(
+          formatJobDetail(job, locale),
+          withDisabledPreview({ ...keyboard, parse_mode: 'HTML' as const })
+        );
+        return;
+      }
+
+      if (job.lastKnownStatus === 'completed') {
+        return;
+      }
+
+      const titleLine = escapeHtml(
+        translate('downloads.summaryTitle', locale, {
+          title: detail.title ?? baseResult.title
+        })
+      );
+      const jobIdLine = escapeHtml(translate('job.jobIdLine', locale, { jobId: job.jobId }));
+      const hashLine = escapeHtml(translate('job.hashLine', locale, { hash: job.hash }));
+      const statusLabel = escapeHtml(translate('downloads.checkStatusHint', locale));
+      const statusLink = `<a href="${escapeHtml(buildStartLink(`${JOB_PAYLOAD_PREFIX}${job.jobId}`))}">${statusLabel}</a>`;
+      await ctx.reply(
+        [titleLine, jobIdLine, hashLine, '', statusLink].join('\n'),
+        withDisabledPreview({ parse_mode: 'HTML' as const })
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await ctx.reply(translate('downloads.startFailed', locale, { message }), withDisabledPreview());
+    }
+  });
+
+  bot.action(DOWNLOAD_CANCEL_ACTION, async (ctx) => {
+    await safeAnswerCallback(ctx);
+  });
+
+  bot.action(/^job:(.+)$/, async (ctx) => {
+    const match = ctx.match as RegExpExecArray | undefined;
+    const rawId = match?.[1];
+    const jobId = rawId ? decodeURIComponent(rawId) : undefined;
+    const chatId = ctx.chat?.id;
+    if (!jobId || !chatId) {
+      await safeAnswerCallback(ctx);
+      return;
+    }
+    await safeAnswerCallback(ctx);
+    const clientId = await ensureTelegramClient(chatId);
+    await sendJobDetailMessage(chatId, clientId, jobId, (text, extra) =>
+      ctx.reply(text, withDisabledPreview(extra))
     );
-    const jobIdLine = escapeHtml(translate('job.jobIdLine', locale, { jobId: job.jobId }));
-    const hashLine = escapeHtml(translate('job.hashLine', locale, { hash: job.hash }));
-    const statusLabel = escapeHtml(translate('downloads.checkStatusHint', locale));
-    const statusLink = `<a href="${escapeHtml(buildStartLink(`${JOB_PAYLOAD_PREFIX}${job.jobId}`))}">${statusLabel}</a>`;
-    await ctx.reply(
-      [titleLine, jobIdLine, hashLine, '', statusLink].join('\n'),
-      withDisabledPreview({ parse_mode: 'HTML' as const })
-    );
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    await ctx.reply(translate('downloads.startFailed', locale, { message }), withDisabledPreview());
-  }
-});
+  });
 
-bot.action(DOWNLOAD_CANCEL_ACTION, async (ctx) => {
-  await safeAnswerCallback(ctx);
-});
-
-bot.action(/^job:(.+)$/, async (ctx) => {
-  const match = ctx.match as RegExpExecArray | undefined;
-  const rawId = match?.[1];
-  const jobId = rawId ? decodeURIComponent(rawId) : undefined;
-  const chatId = ctx.chat?.id;
-  if (!jobId || !chatId) {
+  bot.action(/^refresh:(.+)$/, async (ctx) => {
+    const match = ctx.match as RegExpExecArray | undefined;
+    const rawId = match?.[1];
+    const jobId = rawId ? decodeURIComponent(rawId) : undefined;
+    const chatId = ctx.chat?.id;
+    if (!jobId || !chatId) {
+      await safeAnswerCallback(ctx);
+      return;
+    }
     await safeAnswerCallback(ctx);
-    return;
-  }
-  await safeAnswerCallback(ctx);
-  const clientId = await ensureTelegramClient(chatId);
-  await sendJobDetailMessage(chatId, clientId, jobId, (text, extra) =>
-    ctx.reply(text, withDisabledPreview(extra))
-  );
-});
-
-bot.action(/^refresh:(.+)$/, async (ctx) => {
-  const match = ctx.match as RegExpExecArray | undefined;
-  const rawId = match?.[1];
-  const jobId = rawId ? decodeURIComponent(rawId) : undefined;
-  const chatId = ctx.chat?.id;
-  if (!jobId || !chatId) {
-    await safeAnswerCallback(ctx);
-    return;
-  }
-  await safeAnswerCallback(ctx);
-  await downloadService.syncJob(jobId);
-  const clientId = await ensureTelegramClient(chatId);
-  const job = findOwnedJob(jobId, clientId);
-  if (!job) {
-    await safeEditMessageText(ctx, translateForChat(chatId, 'jobs.notFound', { jobId }), withDisabledPreviewEdit());
-    return;
-  }
-  const locale = getChatLocale(chatId);
-  const keyboard = buildJobActionsKeyboard(job, locale);
-  await safeEditMessageText(
-    ctx,
-    formatJobDetail(job, locale),
-    withDisabledPreviewEdit({ ...keyboard, parse_mode: 'HTML' as const })
-  );
-});
-
-bot.action(/^delete:(.+)$/, async (ctx) => {
-  const match = ctx.match as RegExpExecArray | undefined;
-  const rawId = match?.[1];
-  const jobId = rawId ? decodeURIComponent(rawId) : undefined;
-  const chatId = ctx.chat?.id;
-  if (!jobId || !chatId) {
-    await safeAnswerCallback(ctx);
-    return;
-  }
-  await safeAnswerCallback(ctx);
-  const clientId = await ensureTelegramClient(chatId);
-  const existing = findOwnedJob(jobId, clientId);
-  if (!existing) {
-    await safeEditMessageText(ctx, translateForChat(chatId, 'jobs.notFound', { jobId }), withDisabledPreviewEdit());
-    return;
-  }
-  removalSuppressions.set(jobId, clientId);
-  await downloadService.remove(jobId);
-  try {
+    await downloadService.syncJob(jobId);
+    const clientId = await ensureTelegramClient(chatId);
+    const job = findOwnedJob(jobId, clientId);
+    if (!job) {
+      await safeEditMessageText(
+        ctx,
+        translateForChat(chatId, 'jobs.notFound', { jobId }),
+        withDisabledPreviewEdit()
+      );
+      return;
+    }
+    const locale = getChatLocale(chatId);
+    const keyboard = buildJobActionsKeyboard(job, locale);
     await safeEditMessageText(
       ctx,
-      translateForChat(chatId, 'jobs.removed', { label: existing.label ?? jobId }),
-      withDisabledPreviewEdit()
+      formatJobDetail(job, locale),
+      withDisabledPreviewEdit({ ...keyboard, parse_mode: 'HTML' as const })
     );
-  } catch (error) {
-    console.error('Failed to edit job message after deletion:', error);
-  }
-  await sendJobList(chatId, clientId);
-});
+  });
 
-bot.action(/^set-locale:(\w+)$/i, async (ctx) => {
-  const match = ctx.match as RegExpExecArray | undefined;
-  const requested = match?.[1]?.toLowerCase();
-  const chatId = ctx.chat?.id;
-  if (!chatId || !requested || !isSupportedLocale(requested)) {
+  bot.action(/^delete:(.+)$/, async (ctx) => {
+    const match = ctx.match as RegExpExecArray | undefined;
+    const rawId = match?.[1];
+    const jobId = rawId ? decodeURIComponent(rawId) : undefined;
+    const chatId = ctx.chat?.id;
+    if (!jobId || !chatId) {
+      await safeAnswerCallback(ctx);
+      return;
+    }
     await safeAnswerCallback(ctx);
-    return;
-  }
-  const clientId = await ensureTelegramClient(chatId);
-  const existing = getChatLocale(chatId);
-  if (existing === requested) {
+    const clientId = await ensureTelegramClient(chatId);
+    const existing = findOwnedJob(jobId, clientId);
+    if (!existing) {
+      await safeEditMessageText(
+        ctx,
+        translateForChat(chatId, 'jobs.notFound', { jobId }),
+        withDisabledPreviewEdit()
+      );
+      return;
+    }
+    removalSuppressions.set(jobId, clientId);
+    await downloadService.remove(jobId);
+    try {
+      await safeEditMessageText(
+        ctx,
+        translateForChat(chatId, 'jobs.removed', { label: existing.label ?? jobId }),
+        withDisabledPreviewEdit()
+      );
+    } catch (error) {
+      console.error('Failed to edit job message after deletion:', error);
+    }
+    await sendJobList(chatId, clientId);
+  });
+
+  bot.action(/^set-locale:(\w+)$/i, async (ctx) => {
+    const match = ctx.match as RegExpExecArray | undefined;
+    const requested = match?.[1]?.toLowerCase();
+    const chatId = ctx.chat?.id;
+    if (!chatId || !requested || !isSupportedLocale(requested)) {
+      await safeAnswerCallback(ctx);
+      return;
+    }
+    const clientId = await ensureTelegramClient(chatId);
+    const existing = getChatLocale(chatId);
+    if (existing === requested) {
+      await safeAnswerCallback(ctx);
+      return;
+    }
+    const newLocale = setChatLocale(chatId, requested);
+    await clientRegistry.setClientLocale(clientId, newLocale === defaultLocale ? null : newLocale);
     await safeAnswerCallback(ctx);
-    return;
-  }
-  const newLocale = setChatLocale(chatId, requested);
-  await clientRegistry.setClientLocale(clientId, newLocale === defaultLocale ? null : newLocale);
-  await safeAnswerCallback(ctx);
-  await sendTelegramMessage(
-    chatId,
-    translate('locale.updated', newLocale, { language: getLocaleDisplayName(newLocale) })
-  );
-  await sendStartMessage(chatId);
-});
+    await sendTelegramMessage(
+      chatId,
+      translate('locale.updated', newLocale, { language: getLocaleDisplayName(newLocale) })
+    );
+    await sendStartMessage(chatId);
+  });
 
-downloadService.on('ready', (jobs) => {
-  jobs.forEach((job) => trackedJobs.set(job.jobId, job));
-});
+  downloadService.on('ready', (jobs) => {
+    jobs.forEach((job) => trackedJobs.set(job.jobId, job));
+  });
 
-downloadService.on('jobUpdated', (job) => {
-  const previous = trackedJobs.get(job.jobId);
-  trackedJobs.set(job.jobId, job);
-  const firstSeenCompleted = !previous && job.lastKnownStatus === 'completed';
-  const transitionedToCompleted =
-    !!previous && previous.lastKnownStatus !== 'completed' && job.lastKnownStatus === 'completed';
-  if (!firstSeenCompleted && !transitionedToCompleted) {
-    return;
-  }
-  void notifyJobOwner(
-    job,
-    (chatId) => {
-      const locale = getChatLocale(chatId);
-      const title = job.label ?? job.hash;
-      const openLabel = translate('search.downloadLinkLabel', locale);
-      const linkUrl = buildStartLink(`${JOB_PAYLOAD_PREFIX}${job.jobId}`);
-      const linkHtml = `<a href="${escapeHtml(linkUrl)}">${escapeHtml(openLabel)}</a>`;
-      return translate('notifications.jobCompleted', locale, { title, link: linkHtml });
-    },
-    () => ({ parse_mode: 'HTML' as const })
-  );
-});
+  downloadService.on('jobUpdated', (job) => {
+    const previous = trackedJobs.get(job.jobId);
+    trackedJobs.set(job.jobId, job);
+    const firstSeenCompleted = !previous && job.lastKnownStatus === 'completed';
+    const transitionedToCompleted =
+      !!previous && previous.lastKnownStatus !== 'completed' && job.lastKnownStatus === 'completed';
+    if (!firstSeenCompleted && !transitionedToCompleted) {
+      return;
+    }
+    void notifyJobOwner(
+      job,
+      (chatId) => {
+        const locale = getChatLocale(chatId);
+        const title = job.label ?? job.hash;
+        const openLabel = translate('search.downloadLinkLabel', locale);
+        const linkUrl = buildStartLink(`${JOB_PAYLOAD_PREFIX}${job.jobId}`);
+        const linkHtml = `<a href="${escapeHtml(linkUrl)}">${escapeHtml(openLabel)}</a>`;
+        return translate('notifications.jobCompleted', locale, { title, link: linkHtml });
+      },
+      () => ({ parse_mode: 'HTML' as const })
+    );
+  });
 
-downloadService.on('jobRemoved', (job) => {
-  trackedJobs.delete(job.jobId);
-  const suppressedClientId = removalSuppressions.get(job.jobId);
-  removalSuppressions.delete(job.jobId);
-  if (suppressedClientId && suppressedClientId === job.clientId) {
-    return;
-  }
-  void notifyJobOwner(job, (chatId) =>
-    translate('notifications.jobRemoved', getChatLocale(chatId), { label: job.label ?? job.jobId })
-  );
-});
+  downloadService.on('jobRemoved', (job) => {
+    trackedJobs.delete(job.jobId);
+    const suppressedClientId = removalSuppressions.get(job.jobId);
+    removalSuppressions.delete(job.jobId);
+    if (suppressedClientId && suppressedClientId === job.clientId) {
+      return;
+    }
+    void notifyJobOwner(job, (chatId) =>
+      translate('notifications.jobRemoved', getChatLocale(chatId), { label: job.label ?? job.jobId })
+    );
+  });
 
-downloadService.on('error', (error) => {
-  void broadcast((chatId) => translateForChat(chatId, 'service.error', { message: error.message }));
-});
+  downloadService.on('error', (error) => {
+    void broadcast((chatId) => translateForChat(chatId, 'service.error', { message: error.message }));
+  });
 
-const startBot = async () => {
-  await ensureBootstrapped();
-  const me = await bot.telegram.getMe();
-  botUsername = me.username ?? undefined;
-  if (!botUsername) {
-    throw new Error('Bot username is required');
-  }
-  await bot.telegram.setMyCommands(botCommands);
-  await bot.launch();
-  console.log('Telegram bot started.');
+  const start = async () => {
+    await ensureBootstrapped();
+    const me = await bot.telegram.getMe();
+    botUsername = me.username ?? undefined;
+    if (!botUsername) {
+      throw new Error('Bot username is required');
+    }
+    await bot.telegram.setMyCommands(getBotCommands());
+    await bot.launch();
+    console.log('Telegram bot started.');
+  };
+
+  const stop = async (reason: string) => {
+    poller.stop();
+    await bot.stop(reason);
+  };
+
+  return { bot, start, stop };
 };
-
-startBot().catch((error) => {
-  console.error('Failed to start bot:', error);
-  poller.stop();
-  process.exit(1);
-});
-
-const stop = async (reason: string) => {
-  poller.stop();
-  await bot.stop(reason);
-};
-
-process.once('SIGINT', () => {
-  void stop('SIGINT').finally(() => process.exit(0));
-});
-
-process.once('SIGTERM', () => {
-  void stop('SIGTERM').finally(() => process.exit(0));
-});
