@@ -125,6 +125,35 @@ test('stale detail tokens are treated as expired', async () => {
   );
 });
 
+test('/lang shows language buttons with localized prompt', async () => {
+  const { runtime, sentMessages } = createRuntimeWithStubs();
+  await runtime.bot.handleUpdate({
+    update_id: 3,
+    message: {
+      message_id: 30,
+      date: Math.floor(Date.now() / 1000),
+      chat: { id: 7, type: 'private', first_name: 'User' },
+      text: '/lang',
+      entities: [{ offset: 0, length: 5, type: 'bot_command' }]
+    }
+  } as any);
+  const message = sentMessages.find(({ chatId }) => chatId === 7);
+  assert.ok(message, 'expected a /lang response');
+  assert.ok(
+    message.text.includes('Choose language:') || message.text.includes('Выбери язык:'),
+    'expected language selection prompt'
+  );
+  const markup = message.replyMarkup as { inline_keyboard?: { text: string; callback_data: string }[][] } | undefined;
+  assert.ok(markup && Array.isArray(markup.inline_keyboard), 'expected inline keyboard');
+  const buttons = (markup.inline_keyboard ?? []).flat();
+  const labels = buttons.map((button) => button.text);
+  assert.ok(labels.some((label) => label.includes('Русский')), 'expected Russian language button');
+  assert.ok(labels.some((label) => label.includes('English')), 'expected English language button');
+  const callbacks = buttons.map((button) => button.callback_data);
+  assert.ok(callbacks.includes('set-locale:ru'), 'expected set-locale:ru callback');
+  assert.ok(callbacks.includes('set-locale:en'), 'expected set-locale:en callback');
+});
+
 test('job completion notifies owner only once', async () => {
   const { runtime, downloadService, sentMessages } = createRuntimeWithStubs();
   await runtime.start();

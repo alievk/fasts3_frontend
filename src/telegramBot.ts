@@ -58,6 +58,15 @@ const translate = (key: string, locale: string, params?: TranslationParams): str
   return formatTemplate(template, params);
 };
 const chatLocales = new Map<number, string>();
+const getLocaleFlag = (locale: string): string => {
+  if (locale === 'ru') {
+    return '🇷🇺';
+  }
+  if (locale === 'en') {
+    return '🇬🇧';
+  }
+  return '';
+};
 const cacheChatLocale = (chatId: number, locale: string | null | undefined): void => {
   if (!locale || locale === defaultLocale) {
     chatLocales.delete(chatId);
@@ -86,6 +95,23 @@ const buildLocaleToggleKeyboard = (locale: string) => {
   const targetLocale = resolveToggleLocale(locale);
   const buttonKey = targetLocale === 'en' ? 'start.switchToEnglish' : 'start.switchToRussian';
   return Markup.inlineKeyboard([Markup.button.callback(translate(buttonKey, locale), `set-locale:${targetLocale}`)]);
+};
+const getOrderedLocales = (): string[] => {
+  const available = Object.keys(botTranslations).filter(isSupportedLocale);
+  const preferredOrder = ['ru', 'en'];
+  const primary = preferredOrder.filter((locale) => available.includes(locale));
+  const extra = available.filter((locale) => !preferredOrder.includes(locale));
+  return [...primary, ...extra];
+};
+const buildLanguageKeyboard = () => {
+  const locales = getOrderedLocales();
+  const buttons = locales.map((locale) => {
+    const flag = getLocaleFlag(locale);
+    const name = getLocaleDisplayName(locale);
+    const label = flag ? `${flag} ${name}` : name;
+    return Markup.button.callback(label, `set-locale:${locale}`);
+  });
+  return Markup.inlineKeyboard([buttons]);
 };
 const buildStartContent = (locale: string) => {
   const howItWorks = translate('common.howItWorksHtml', locale);
@@ -124,7 +150,8 @@ const getBotUsername = (): string => {
 const getBotCommands = () => [
   { command: 'search', description: translateDefault('commands.searchDescription') },
   { command: 'jobs', description: translateDefault('commands.jobsDescription') },
-  { command: 'help', description: translateDefault('commands.helpDescription') }
+  { command: 'help', description: translateDefault('commands.helpDescription') },
+  { command: 'lang', description: translateDefault('commands.langDescription') }
 ];
 
 const activeChats = new Set<number>();
@@ -767,6 +794,16 @@ export const createTelegramBot = (
     const faq = translateForChat(chatId, 'faq.messageHtml');
     const text = translateForChat(chatId, 'help.messageHtml', { howItWorks, faq });
     await ctx.reply(text, withDisabledPreview({ parse_mode: 'HTML' as const }));
+  });
+
+  bot.command('lang', async (ctx) => {
+    const chatId = getPrivateChatId(ctx);
+    if (chatId === undefined) {
+      return;
+    }
+    const keyboard = buildLanguageKeyboard();
+    const text = translateForChat(chatId, 'lang.prompt');
+    await ctx.reply(text, withDisabledPreview({ ...keyboard }));
   });
 
   bot.command('search', async (ctx) => {

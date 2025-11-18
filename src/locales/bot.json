@@ -93,7 +93,9 @@
     "notifications.jobCompleted": "Задание \"{title}\" завершено — {link}",
     "notifications.jobRemoved": "Задание удалено: {label}",
     "locale.updated": "Язык переключен на {language}.",
-    "locale.selfName": "Русский"
+    "locale.selfName": "Русский",
+    "commands.langDescription": "Сменить язык",
+    "lang.prompt": "Выбери язык:"
   },
   "en": {
     "commands.searchDescription": "Search torrents",
@@ -160,6 +162,8 @@
     "notifications.jobCompleted": "Job \"{title}\" completed — {link}",
     "notifications.jobRemoved": "Job removed: {label}",
     "locale.updated": "Language switched to {language}.",
-    "locale.selfName": "English"
+    "locale.selfName": "English",
+    "commands.langDescription": "Change language",
+    "lang.prompt": "Choose language:"
   }
 }
