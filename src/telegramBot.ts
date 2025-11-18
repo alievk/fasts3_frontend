@@ -1060,11 +1060,6 @@ export const createTelegramBot = (
       return;
     }
     const clientId = await ensureTelegramClient(chatId);
-    const existing = getChatLocale(chatId);
-    if (existing === requested) {
-      await safeAnswerCallback(ctx);
-      return;
-    }
     const newLocale = setChatLocale(chatId, requested);
     await clientRegistry.setClientLocale(clientId, newLocale === defaultLocale ? null : newLocale);
     await safeAnswerCallback(ctx);
@@ -1072,7 +1067,6 @@ export const createTelegramBot = (
       chatId,
       translate('locale.updated', newLocale, { language: getLocaleDisplayName(newLocale) })
     );
-    await sendStartMessage(chatId);
   });
 
   downloadService.on('jobUpdated', (job) => {
