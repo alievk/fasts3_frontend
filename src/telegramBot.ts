@@ -634,7 +634,7 @@ const startDownloadFromToken = async (
         provider: baseResult.providerLabel || baseResult.provider
       })
     );
-    const effectiveSizeBytes = detail.sizeBytes ?? baseResult.sizeBytes;
+    const effectiveSizeBytes = baseResult.sizeBytes;
     const sizeLine = escapeHtml(
       translate('search.detailSizeLine', locale, { size: formatSize(effectiveSizeBytes, locale) })
     );

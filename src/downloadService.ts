@@ -35,19 +35,8 @@ const resolveTorrentTitle = (result: SearchResult, detail: SearchResultDetail): 
   return searchTitle || detailTitle || id;
 };
 
-const resolveTorrentSizeBytes = (result: SearchResult, detail: SearchResultDetail): number | null => {
-  if (hasKnownSize(result.sizeBytes)) {
-    return result.sizeBytes;
-  }
-  if (hasKnownSize(detail.sizeBytes)) {
-    return detail.sizeBytes;
-  }
-  const largestFileSize = detail.files.reduce<number>(
-    (max, file) => (hasKnownSize(file.sizeBytes) && file.sizeBytes > max ? file.sizeBytes : max),
-    0
-  );
-  return largestFileSize > 0 ? largestFileSize : null;
-};
+const resolveTorrentSizeBytes = (result: SearchResult): number | null =>
+  hasKnownSize(result.sizeBytes) ? result.sizeBytes : null;
 
 const mapDetailToStored = (detail: JobDetail, existing?: StoredJob): StoredJob => ({
   jobId: detail.jobId,
@@ -166,26 +155,8 @@ export class DownloadService extends EventEmitter {
     if (!detail) {
       return undefined;
     }
-    let sourceResult: SearchResult = result;
-    const hasResultSize = hasKnownSize(result.sizeBytes);
-    const hasDetailSize = hasKnownSize(detail.sizeBytes);
-    const hasFileSizes = detail.files.some((file) => hasKnownSize(file.sizeBytes));
-
-    if (!hasResultSize && !hasDetailSize && !hasFileSizes && detail.title.trim()) {
-      const freshResults = await this.apiClient.search(detail.title.trim());
-      const matched = freshResults.find(
-        (item) =>
-          item.provider.toLowerCase() === result.provider.toLowerCase() &&
-          item.id === result.id &&
-          hasKnownSize(item.sizeBytes)
-      );
-      if (matched) {
-        sourceResult = matched;
-      }
-    }
-
-    const resolvedTitle = resolveTorrentTitle(sourceResult, detail);
-    const resolvedSizeBytes = resolveTorrentSizeBytes(sourceResult, detail);
+    const resolvedTitle = resolveTorrentTitle(result, detail);
+    const resolvedSizeBytes = resolveTorrentSizeBytes(result);
     const normalizedHash = normalizeHash(detail.hash ?? null);
     return {
       ...detail,
