@@ -53,7 +53,8 @@ const createRuntimeWithStubs = () => {
   } as const;
   const runtime = createTelegramBot('test-token', config, {
     downloadService: downloadService as unknown as any,
-    poller: poller as unknown as any
+    poller: poller as unknown as any,
+    apiClient: {} as any
   });
   const sentMessages: { chatId: number; text: string; replyMarkup?: unknown }[] = [];
   (runtime.bot.telegram as any).sendMessage = async (chatId: number, text: string) => {

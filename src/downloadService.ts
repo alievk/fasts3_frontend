@@ -53,31 +53,34 @@ const mapDetailToStored = (detail: JobDetail, existing?: StoredJob): StoredJob =
   s3ObjectKey: detail.s3ObjectKey ?? existing?.s3ObjectKey ?? null
 });
 
-const newStoredJob = (
-  jobId: string,
-  hash: string,
-  label: string | undefined,
-  status: JobStatus,
-  createdAt: string,
-  statusUpdatedAt: string,
-  progress: number | null,
-  sizeBytes: number | undefined,
-  error: string | null,
-  shortUrl: string | null,
-  s3ObjectKey: string | null
-): StoredJob => ({
-  jobId,
-  hash,
-  label: label ?? null,
-  createdAt,
-  lastKnownStatus: status,
+
+interface NewStoredJobParams {
+  jobId: string;
+  hash: string;
+  label?: string;
+  status: JobStatus;
+  createdAt: string;
+  statusUpdatedAt: string;
+  progress: number | null;
+  sizeBytes?: number;
+  error: string | null;
+  shortUrl: string | null;
+  s3ObjectKey: string | null;
+}
+
+const newStoredJob = (params: NewStoredJobParams): StoredJob => ({
+  jobId: params.jobId,
+  hash: params.hash,
+  label: params.label ?? null,
+  createdAt: params.createdAt,
+  lastKnownStatus: params.status,
   lastSyncedAt: new Date().toISOString(),
-  statusUpdatedAt,
-  progress: progress ?? (status === 'completed' ? 1 : 0),
-  shortUrl,
-  error: error ?? null,
-  sizeBytes: sizeBytes ?? null,
-  s3ObjectKey: s3ObjectKey ?? null
+  statusUpdatedAt: params.statusUpdatedAt,
+  progress: params.progress ?? (params.status === 'completed' ? 1 : 0),
+  shortUrl: params.shortUrl,
+  error: params.error ?? null,
+  sizeBytes: params.sizeBytes ?? null,
+  s3ObjectKey: params.s3ObjectKey ?? null
 });
 
 export class DownloadService extends EventEmitter {
@@ -191,19 +194,19 @@ export class DownloadService extends EventEmitter {
       }
 
       const response = await this.apiClient.createJob(result.magnet, result.title);
-      const stored = newStoredJob(
-        response.jobId,
-        response.hash,
-        result.title,
-        response.status,
-        response.createdAt,
-        response.statusUpdatedAt,
-        response.progress,
-        result.sizeBytes ?? undefined,
-        response.error,
-        response.shortUrl,
-        response.s3ObjectKey
-      );
+      const stored = newStoredJob({
+        jobId: response.jobId,
+        hash: response.hash,
+        label: result.title,
+        status: response.status,
+        createdAt: response.createdAt,
+        statusUpdatedAt: response.statusUpdatedAt,
+        progress: response.progress,
+        sizeBytes: result.sizeBytes ?? undefined,
+        error: response.error,
+        shortUrl: response.shortUrl,
+        s3ObjectKey: response.s3ObjectKey
+      });
       const owned = await this.clientRegistry.bindJobToClient(stored, owner);
       this.jobs.set(owned.jobId, owned);
       this.emit('jobUpdated', owned);

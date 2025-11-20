@@ -39,6 +39,7 @@ const formatProviderLabel = (provider: string, explicit?: string): string => {
 const KB = 1024;
 const MB = KB * 1024;
 const GB = MB * 1024;
+const TB = GB * 1024;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -88,6 +89,8 @@ const parseSizeBytes = (value: unknown): number | null => {
   }
   const multiplier = (() => {
     switch (unitRaw.toUpperCase()) {
+      case 'TB':
+        return TB;
       case 'GB':
         return GB;
       case 'MB':
@@ -413,7 +416,9 @@ class HttpApiClient implements ApiClient {
   private buildHeaders(extra?: HeadersInit): HeadersInit {
     const headers = new Headers(extra);
     headers.set('Accept', 'application/json');
-    headers.set('Authorization', `Bearer ${this.authToken}`);
+    if (this.authToken) {
+      headers.set('Authorization', `Bearer ${this.authToken}`);
+    }
     return headers;
   }
 
@@ -432,6 +437,9 @@ class HttpApiClient implements ApiClient {
 
 export const createApiClient = (): ApiClient => {
   const config = loadConfig();
-  const token = config.apiToken ?? 'change-me';
+  const token = config.apiToken;
+  if (!token) {
+    throw new Error('TORRENT_API_TOKEN is required but was not provided.');
+  }
   return new HttpApiClient(config.apiBaseUrl, token, config.searchRequestTimeoutMs);
 };
