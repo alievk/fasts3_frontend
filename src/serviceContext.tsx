@@ -19,7 +19,7 @@ const ServiceContext = createContext<ServiceContextValue | undefined>(undefined)
 export const ServiceProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
   const config = useMemo(() => loadConfig(), []);
   const searchPipeline = useMemo(() => createSearchPipeline(config), [config]);
-  const clientRegistry = useMemo(() => createClientRegistry(config.clientDbPath), [config.clientDbPath]);
+  const clientRegistry = useMemo(() => createClientRegistry(config), [config]);
 
   const downloadService = useMemo(() => {
     const apiClient = createApiClient();

@@ -75,6 +75,8 @@ export interface CreateJobResponse {
   s3ObjectKey: string | null;
 }
 
+export type ClientDbProvider = 'sqlite' | 'd1';
+
 export interface Config {
   apiBaseUrl: string;
   apiToken?: string;
@@ -85,7 +87,11 @@ export interface Config {
   searchMinSizeBytes?: number;
   searchMaxSizeBytes?: number;
   playerBaseUrl: string;
+  clientDbProvider: ClientDbProvider;
   clientDbPath: string;
+  d1AccountId?: string;
+  d1DatabaseId?: string;
+  d1ApiToken?: string;
   botLocale?: string;
 }
 

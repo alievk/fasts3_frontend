@@ -14,7 +14,11 @@ const createTestConfig = (): Config => ({
   searchMinSizeBytes: undefined,
   searchMaxSizeBytes: undefined,
   playerBaseUrl: 'http://localhost/player',
+  clientDbProvider: 'sqlite',
   clientDbPath: ':memory:',
+  d1AccountId: undefined,
+  d1DatabaseId: undefined,
+  d1ApiToken: undefined,
   botLocale: 'en'
 });
 

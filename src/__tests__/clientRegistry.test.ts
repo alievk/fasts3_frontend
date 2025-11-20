@@ -3,9 +3,12 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
+import Database from 'better-sqlite3';
+import { createClientRegistry } from '../clientRegistry.js';
 import { MemoryClientRegistry } from '../memoryClientRegistry.js';
 import { SQLiteClientRegistry } from '../sqliteClientRegistry.js';
-import { StoredJob } from '../types.js';
+import { D1ClientRegistry } from '../d1ClientRegistry.js';
+import { ClientRegistry, Config, StoredJob } from '../types.js';
 
 const baseJob = (): StoredJob => ({
   jobId: 'job-1',
@@ -22,7 +25,25 @@ const baseJob = (): StoredJob => ({
   s3ObjectKey: null
 });
 
-const runCommonAssertions = async (registry: MemoryClientRegistry | SQLiteClientRegistry) => {
+const buildConfig = (provider: 'sqlite' | 'd1'): Config => ({
+  apiBaseUrl: 'http://localhost:8000/api',
+  apiToken: 'token',
+  pollingIntervalMs: 1000,
+  searchLimit: 5,
+  searchPageSize: 5,
+  searchRequestTimeoutMs: 1000,
+  searchMinSizeBytes: undefined,
+  searchMaxSizeBytes: undefined,
+  playerBaseUrl: 'http://localhost/player',
+  clientDbProvider: provider,
+  clientDbPath: ':memory:',
+  d1AccountId: provider === 'd1' ? 'acc' : undefined,
+  d1DatabaseId: provider === 'd1' ? 'db' : undefined,
+  d1ApiToken: provider === 'd1' ? 'token' : undefined,
+  botLocale: 'en'
+});
+
+const runCommonAssertions = async (registry: ClientRegistry) => {
   const clientId = 'client-1';
   const firstRecord = await registry.registerClient(clientId, { type: 'cli', profile: 'test' });
   assert.equal(firstRecord.locale ?? null, null);
@@ -54,6 +75,31 @@ const runCommonAssertions = async (registry: MemoryClientRegistry | SQLiteClient
   assert.equal(afterDelete.length, 0);
 };
 
+const createSqliteBackedFetch = () => {
+  const db = new Database(':memory:');
+  db.pragma('foreign_keys = ON');
+  return async (_url: string, init?: RequestInit) => {
+    const rawBody = init?.body ?? '{}';
+    const bodyText = typeof rawBody === 'string' ? rawBody : rawBody?.toString() ?? '{}';
+    const payload = JSON.parse(bodyText);
+    const sql = (payload.sql as string | undefined) ?? '';
+    const params = Array.isArray(payload.params) ? payload.params : [];
+    const args = params as any[];
+    const stmt = db.prepare(sql);
+    const command = sql.trim().split(/\s+/)[0]?.toLowerCase();
+    const results = command === 'select' ? stmt.all(...args) : (stmt.run(...args), []);
+    const responsePayload = {
+      success: true,
+      errors: [],
+      result: [{ success: true, results }]
+    };
+    return new Response(JSON.stringify(responsePayload), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  };
+};
+
 test('memory client registry stores and retrieves jobs', async () => {
   const registry = new MemoryClientRegistry();
   await runCommonAssertions(registry);
@@ -71,4 +117,23 @@ test('sqlite client registry persists data on disk', async () => {
   assert.equal(jobs[0]?.clientId, 'client-1');
   await runCommonAssertions(reopened);
   await fs.rm(tmpDir, { recursive: true, force: true });
+});
+
+test('createClientRegistry returns sqlite registry when requested', async () => {
+  const registry = createClientRegistry(buildConfig('sqlite'));
+  assert.ok(registry instanceof SQLiteClientRegistry);
+  await runCommonAssertions(registry);
+});
+
+test('createClientRegistry returns d1 registry when requested', async () => {
+  const fetchStub = createSqliteBackedFetch();
+  const originalFetch = global.fetch;
+  (global as any).fetch = fetchStub;
+  try {
+    const registry = createClientRegistry(buildConfig('d1'));
+    assert.ok(registry instanceof D1ClientRegistry);
+    await runCommonAssertions(registry);
+  } finally {
+    (global as any).fetch = originalFetch;
+  }
 });

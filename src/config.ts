@@ -1,6 +1,6 @@
 import path from 'node:path';
 import dotenv from 'dotenv';
-import { Config } from './types.js';
+import { ClientDbProvider, Config } from './types.js';
 
 dotenv.config();
 
@@ -35,11 +35,22 @@ const parsePositiveFloat = (value: string | undefined): number | undefined => {
 };
 
 const resolveClientDbPath = (): string => {
-  if (process.env.TORRENT_CLIENT_DB_PATH) {
-    return path.resolve(process.env.TORRENT_CLIENT_DB_PATH);
+  if (process.env.LOCAL_SQLITE_DB_PATH) {
+    return path.resolve(process.env.LOCAL_SQLITE_DB_PATH);
   }
 
   return path.resolve('.cache', 'torrent-cli', 'clients.sqlite');
+};
+
+const resolveClientDbProvider = (): ClientDbProvider => {
+  const raw = process.env.TORRENT_CLIENT_DB_PROVIDER?.toLowerCase().trim();
+  if (!raw || raw === 'sqlite') {
+    return 'sqlite';
+  }
+  if (raw === 'd1') {
+    return 'd1';
+  }
+  throw new Error(`Unsupported TORRENT_CLIENT_DB_PROVIDER: ${raw}`);
 };
 
 export const loadConfig = (): Config => {
@@ -65,6 +76,15 @@ export const loadConfig = (): Config => {
     throw new Error('PLAYER_BASE_URL is required');
   }
   const botLocale = process.env.TORRENT_TELEGRAM_BOT_LOCALE?.toLowerCase();
+  const clientDbProvider = resolveClientDbProvider();
+  const d1AccountId = process.env.CLOUDFLARE_ACCOUNT_ID;
+  const d1DatabaseId = process.env.CLOUDFLARE_D1_DATABASE_ID;
+  const d1ApiToken = process.env.CLOUDFLARE_API_TOKEN;
+  if (clientDbProvider === 'd1') {
+    if (!d1AccountId || !d1DatabaseId || !d1ApiToken) {
+      throw new Error('CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_D1_DATABASE_ID, and CLOUDFLARE_API_TOKEN are required for D1 provider');
+    }
+  }
 
   return {
     apiBaseUrl,
@@ -76,7 +96,11 @@ export const loadConfig = (): Config => {
     searchMinSizeBytes,
     searchMaxSizeBytes,
     playerBaseUrl,
+    clientDbProvider,
     clientDbPath: resolveClientDbPath(),
+    d1AccountId,
+    d1DatabaseId,
+    d1ApiToken,
     botLocale
   };
 };

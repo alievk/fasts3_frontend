@@ -727,7 +727,7 @@ export const createTelegramBot = (
   defaultLocale = isSupportedLocale(config.botLocale) ? config.botLocale : PRIMARY_LOCALE;
   searchPageSize = config.searchPageSize;
   apiClient = deps.apiClient ?? createApiClient();
-  clientRegistry = deps.clientRegistry ?? createClientRegistry(config.clientDbPath);
+  clientRegistry = deps.clientRegistry ?? createClientRegistry(config);
   searchPipeline = deps.searchPipeline ?? createSearchPipeline(config);
   downloadService =
     deps.downloadService ?? new DownloadService(apiClient, clientRegistry, config.searchLimit, searchPipeline);
