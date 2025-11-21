@@ -3,6 +3,7 @@
     "commands.searchDescription": "Искать фильмы",
     "commands.jobsDescription": "Управлять загрузками",
     "commands.helpDescription": "Помощь",
+    "commands.subscriptionDescription": "Подписка",
     "common.unknown": "неизвестно",
     "common.yes": "да",
     "common.no": "нет",
@@ -63,7 +64,10 @@
       "- /how_watch_on_phone\n",
       "\n",
       "<b>- Как стримить через AirPlay?</b>\n",
-      "- /how_stream_airplay\n"
+      "- /how_stream_airplay\n",
+      "\n",
+      "- Остались вопросы?\n",
+      "- Пиши @numpy_as_np\n"
     ],
     "start.messageHtml": [
       "Привет, я бот для поиска и скачивания фильмов 🎬\n\n",
@@ -72,6 +76,14 @@
       "Помощь: /help"
     ],
     "help.messageHtml": "{faq}",
+    "subscription.message": [
+      "Купи подписку чтобы скачивать неограниченное количество фильмов.\n\n",
+      "По истечение подписки, все ссылки продолжают работать и ты можешь просматривать и скачивать ранее выгруженные в облако фильмы.\n\n",
+      "Остались вопросы? Пиши @numpy_as_np"
+    ],
+    "subscription.pay3m": "Оплатить 3 месяца - 300 руб.",
+    "subscription.pay6m": "Оплатить 6 месяцев - 600 руб.",
+    "subscription.pay1y": "Оплатить 1 год - 1200 руб.",
     "howDownloadPhone.messageHtml": [
       "<b>📱 Как качать фильмы на iPhone</b>\n",
       "\n",
@@ -135,6 +147,7 @@
     "commands.searchDescription": "Search torrents",
     "commands.jobsDescription": "Manage downloads",
     "commands.helpDescription": "Help",
+    "commands.subscriptionDescription": "Subscription",
     "common.unknown": "unknown",
     "common.yes": "yes",
     "common.no": "no",
@@ -202,6 +215,10 @@
       "Help: /help"
     ],
     "help.messageHtml": "{faq}",
+    "subscription.message": "Buy a subscription to download unlimited movies.\n\nAfter it expires, all links keep working so you can keep streaming or downloading movies already uploaded to the cloud.",
+    "subscription.pay3m": "Pay for 3 months - 300 RUB",
+    "subscription.pay6m": "Pay for 6 months - 600 RUB",
+    "subscription.pay1y": "Pay for 1 year - 1200 RUB",
     "howDownloadPhone.messageHtml": [
       "<b>📱 How to download movies on iPhone</b>\n",
       "\n",

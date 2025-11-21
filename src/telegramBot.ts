@@ -121,6 +121,20 @@ const buildStartContent = (locale: string) => {
     extra: { parse_mode: 'HTML' as const }
   };
 };
+
+const SUBSCRIPTION_PAYLOAD_PREFIX = 'subscription:';
+const SUBSCRIPTION_OPTIONS = [
+  { key: 'subscription.pay3m', payload: `${SUBSCRIPTION_PAYLOAD_PREFIX}3m` },
+  { key: 'subscription.pay6m', payload: `${SUBSCRIPTION_PAYLOAD_PREFIX}6m` },
+  { key: 'subscription.pay1y', payload: `${SUBSCRIPTION_PAYLOAD_PREFIX}1y` }
+] as const;
+
+const buildSubscriptionKeyboard = (locale: string) =>
+  Markup.inlineKeyboard(
+    SUBSCRIPTION_OPTIONS.map((option) => Markup.button.callback(translate(option.key, locale), option.payload)),
+    { columns: 1 }
+  );
+
 const sendStartMessage = async (
   chatId: number,
   replyFn?: (text: string, extra?: SendMessageExtra) => Promise<unknown>
@@ -150,6 +164,7 @@ const getBotUsername = (): string => {
 const getBotCommands = (locale: string) => [
   { command: 'search', description: translate('commands.searchDescription', locale) },
   { command: 'jobs', description: translate('commands.jobsDescription', locale) },
+  { command: 'subscription', description: translate('commands.subscriptionDescription', locale) },
   { command: 'help', description: translate('commands.helpDescription', locale) },
   { command: 'lang', description: translate('commands.langDescription', locale) }
 ];
@@ -804,6 +819,17 @@ export const createTelegramBot = (
     await ctx.reply(text, withDisabledPreview({ parse_mode: 'HTML' as const }));
   });
 
+  bot.command('subscription', async (ctx) => {
+    const chatId = getPrivateChatId(ctx);
+    if (chatId === undefined) {
+      return;
+    }
+    const locale = getChatLocale(chatId);
+    const keyboard = buildSubscriptionKeyboard(locale);
+    const text = translateForChat(chatId, 'subscription.message');
+    await ctx.reply(text, withDisabledPreview({ ...keyboard }));
+  });
+
   bot.command('how_download_phone', async (ctx) => {
     const chatId = getPrivateChatId(ctx);
     if (chatId === undefined) {
@@ -899,6 +925,15 @@ export const createTelegramBot = (
     }
     const clientId = await ensureTelegramClient(chatId);
     await sendJobList(chatId, clientId);
+  });
+
+  bot.action(new RegExp(`^${SUBSCRIPTION_PAYLOAD_PREFIX}(.+)$`), async (ctx) => {
+    const chatId = getPrivateChatId(ctx);
+    if (chatId === undefined) {
+      await safeAnswerCallback(ctx);
+      return;
+    }
+    await safeAnswerCallback(ctx);
   });
 
   bot.action(/^page:(\d+)$/, async (ctx) => {

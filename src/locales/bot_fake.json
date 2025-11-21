@@ -3,14 +3,15 @@
     "commands.searchDescription": "Искать файлы",
     "commands.jobsDescription": "Управлять загрузками",
     "commands.helpDescription": "Помощь",
+    "commands.subscriptionDescription": "Подписка",
     "common.unknown": "неизвестно",
     "common.yes": "да",
     "common.no": "нет",
     "common.sizeGb": "{value}Гб",
     "common.howItWorksHtml": [
       "<b>Как я работаю:</b>\n",
-      "1. отправь мне название файла и я вышлю тебе подборку торрентов\n",
-      "2. выбери подходящий торрент и начни выгрузку в облако\n",
+      "1. отправь мне название файла и я вышлю тебе подборку ссылок\n",
+      "2. выбери подходящую ссылку и начни выгрузку в облако\n",
       "3. после выгрузки я вышлю тебе ссылку на скачивание\n",
       "4. скачай файл на любое устройство или открой онлайн 📂"
     ],
@@ -45,9 +46,9 @@
     "search.detailExtensionLine": "Формат: {extension}",
     "search.detailStreamLine": "Смотреть онлайн: {option}",
     "search.streamWhy": "Почему?",
-    "search.streamExplanation": "Чтобы смотреть файл онлайн и стримить через AirPlay, нужен формат mp4. У этого торрента формат {extension}.",
+    "search.streamExplanation": "Чтобы смотреть файл онлайн и стримить через AirPlay, нужен формат mp4. У этого файла формат {extension}.",
     "search.detailConfirm": "Начать загрузку",
-    "search.detailUnavailable": "Не удалось получить детали для торрента ({provider}: {id}).",
+    "search.detailUnavailable": "Не удалось получить детали для файла ({provider}: {id}).",
     "search.detailFailed": "Не удалось получить детали: {message}",
     "faq.messageHtml": [
       "<b>- Для просмотра и скачивания в России нужен VPN?</b>\n",
@@ -63,7 +64,10 @@
       "- /how_watch_on_phone\n",
       "\n",
       "<b>- Как стримить через AirPlay?</b>\n",
-      "- /how_stream_airplay\n"
+      "- /how_stream_airplay\n",
+      "\n",
+      "- Остались вопросы?\n",
+      "- Пиши @numpy_as_np\n"
     ],
     "start.messageHtml": [
       "Привет, я бот для поиска и скачивания файлов 📁\n\n",
@@ -72,6 +76,14 @@
       "Помощь: /help"
     ],
     "help.messageHtml": "{faq}",
+    "subscription.message": [
+      "Купи подписку чтобы скачивать неограниченное количество файлов.\n\n",
+      "По истечение подписки, все ссылки продолжают работать и вы можете просматривать и скачивать ранее выгруженные в облако файлы.\n\n",
+      "Остались вопросы? Пиши @numpy_as_np"
+    ],
+    "subscription.pay3m": "Оплатить 3 месяца - 300 руб.",
+    "subscription.pay6m": "Оплатить 6 месяцев - 600 руб.",
+    "subscription.pay1y": "Оплатить 1 год - 1200 руб.",
     "howDownloadPhone.messageHtml": [
       "<b>📱 Как качать файлы на iPhone</b>\n",
       "\n",
@@ -121,7 +133,7 @@
     "status.uploading": "загружается",
     "status.completed": "готово",
     "status.error": "ошибка",
-    "downloads.uploadingHeading": "Загружаю торрент в облако:",
+    "downloads.uploadingHeading": "Загружаю файл в облако:",
     "downloads.checkStatusHint": "Проверить статус",
     "downloads.startFailed": "Не удалось запустить загрузку: {message}",
     "notifications.jobCompleted": "Задание \"{title}\" завершено — {link}",
