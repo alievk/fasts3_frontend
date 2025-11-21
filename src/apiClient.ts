@@ -439,7 +439,7 @@ export const createApiClient = (): ApiClient => {
   const config = loadConfig();
   const token = config.apiToken;
   if (!token) {
-    throw new Error('TORRENT_API_TOKEN is required but was not provided.');
+    throw new Error('API_TOKEN is required but was not provided.');
   }
   return new HttpApiClient(config.apiBaseUrl, token, config.searchRequestTimeoutMs);
 };

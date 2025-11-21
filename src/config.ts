@@ -35,22 +35,23 @@ const parsePositiveFloat = (value: string | undefined): number | undefined => {
 };
 
 const resolveClientDbPath = (): string => {
-  if (process.env.LOCAL_SQLITE_DB_PATH) {
-    return path.resolve(process.env.LOCAL_SQLITE_DB_PATH);
+  const explicitPath = process.env.CLIENT_DB_PATH ?? process.env.LOCAL_SQLITE_DB_PATH;
+  if (explicitPath) {
+    return path.resolve(explicitPath);
   }
 
   return path.resolve('.cache', 'torrent-cli', 'clients.sqlite');
 };
 
 const resolveClientDbProvider = (): ClientDbProvider => {
-  const raw = process.env.TORRENT_CLIENT_DB_PROVIDER?.toLowerCase().trim();
+  const raw = process.env.CLIENT_DB_PROVIDER?.toLowerCase().trim();
   if (!raw || raw === 'sqlite') {
     return 'sqlite';
   }
   if (raw === 'd1') {
     return 'd1';
   }
-  throw new Error(`Unsupported TORRENT_CLIENT_DB_PROVIDER: ${raw}`);
+  throw new Error(`Unsupported CLIENT_DB_PROVIDER: ${raw}`);
 };
 
 const resolveBotTranslationsBundle = (): BotTranslationsBundle => {
@@ -65,28 +66,28 @@ const resolveBotTranslationsBundle = (): BotTranslationsBundle => {
 };
 
 export const loadConfig = (): Config => {
-  const apiBaseUrl = process.env.TORRENT_API_URL ?? DEFAULT_API_BASE_URL;
-  const pollingEnv = process.env.TORRENT_CLI_POLL_MS;
+  const apiBaseUrl = process.env.API_URL ?? DEFAULT_API_BASE_URL;
+  const pollingEnv = process.env.CLI_POLL_MS;
   const pollingIntervalMs =
     pollingEnv !== undefined ? Math.max(1000, Number.parseInt(pollingEnv, 10) || DEFAULT_POLLING_MS) : DEFAULT_POLLING_MS;
-  const parsedLimit = parsePositiveInt(process.env.TORRENT_TELEGRAM_BOT_SEARCH_LIMIT);
+  const parsedLimit = parsePositiveInt(process.env.TELEGRAM_BOT_SEARCH_LIMIT);
   const searchLimit = parsedLimit ?? DEFAULT_SEARCH_LIMIT;
-  const parsedPageSize = parsePositiveInt(process.env.TORRENT_TELEGRAM_BOT_PAGE_SIZE);
+  const parsedPageSize = parsePositiveInt(process.env.TELEGRAM_BOT_PAGE_SIZE);
   const basePageSize = parsedPageSize ?? DEFAULT_PAGE_SIZE;
   const searchPageSize = Math.max(1, Math.min(searchLimit, basePageSize));
-  const minSizeGiB = parsePositiveFloat(process.env.TORRENT_SEARCH_MIN_SIZE_GIB) ?? DEFAULT_MIN_SIZE_GIB;
-  const maxSizeGiB = parsePositiveFloat(process.env.TORRENT_SEARCH_MAX_SIZE_GIB) ?? DEFAULT_MAX_SIZE_GIB;
+  const minSizeGiB = parsePositiveFloat(process.env.SEARCH_MIN_SIZE_GIB) ?? DEFAULT_MIN_SIZE_GIB;
+  const maxSizeGiB = parsePositiveFloat(process.env.SEARCH_MAX_SIZE_GIB) ?? DEFAULT_MAX_SIZE_GIB;
   const resolvedMinGiB = Math.min(minSizeGiB, maxSizeGiB);
   const searchMinSizeBytes =
     Number.isFinite(resolvedMinGiB) && resolvedMinGiB > 0 ? Math.floor(resolvedMinGiB * 1024 * 1024 * 1024) : undefined;
   const searchMaxSizeBytes =
     Number.isFinite(maxSizeGiB) && maxSizeGiB > 0 ? Math.floor(maxSizeGiB * 1024 * 1024 * 1024) : undefined;
-  const searchRequestTimeoutMs = parsePositiveInt(process.env.TORRENT_SEARCH_REQUEST_TIMEOUT_MS) ?? DEFAULT_SEARCH_TIMEOUT_MS;
+  const searchRequestTimeoutMs = parsePositiveInt(process.env.SEARCH_REQUEST_TIMEOUT_MS) ?? DEFAULT_SEARCH_TIMEOUT_MS;
   const playerBaseUrl = process.env.PLAYER_BASE_URL;
   if (!playerBaseUrl) {
     throw new Error('PLAYER_BASE_URL is required');
   }
-  const botLocale = process.env.TORRENT_TELEGRAM_BOT_LOCALE?.toLowerCase();
+  const botLocale = process.env.TELEGRAM_BOT_LOCALE?.toLowerCase();
   const botTranslationsBundle = resolveBotTranslationsBundle();
   const clientDbProvider = resolveClientDbProvider();
   const d1AccountId = process.env.CLOUDFLARE_ACCOUNT_ID;
@@ -100,7 +101,7 @@ export const loadConfig = (): Config => {
 
   return {
     apiBaseUrl,
-    apiToken: process.env.TORRENT_API_TOKEN,
+    apiToken: process.env.API_TOKEN,
     pollingIntervalMs,
     searchLimit,
     searchPageSize,

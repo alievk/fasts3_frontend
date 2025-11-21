@@ -58,7 +58,7 @@ const setupGlobalErrorHandlers = (): void => {
 };
 
 const main = async (): Promise<void> => {
-  const botToken = requireEnv('TORRENT_TELEGRAM_BOT_TOKEN');
+  const botToken = requireEnv('TELEGRAM_BOT_TOKEN');
   const config = loadConfig();
   runtime = createTelegramBot(botToken, config);
   setupSignalHandlers();

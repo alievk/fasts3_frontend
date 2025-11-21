@@ -35,7 +35,7 @@ const normalizeUrl = (value) => {
 
 const config = {};
 
-const apiBaseUrl = normalizeUrl(process.env.TORRENT_API_URL);
+const apiBaseUrl = normalizeUrl(process.env.API_URL);
 if (apiBaseUrl) {
   config.apiBaseUrl = apiBaseUrl;
 }

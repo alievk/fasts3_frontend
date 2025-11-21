@@ -13,7 +13,7 @@ services:
     extends:
       service: bot
     environment:
-      TORRENT_TELEGRAM_BOT_TOKEN: 8470570517:AAESl-V5QrI28i1_gs3JqQJTmF6RVWT1pjU
+      TELEGRAM_BOT_TOKEN: 8470570517:AAESl-V5QrI28i1_gs3JqQJTmF6RVWT1pjU
       TELEGRAM_LOCALE: bot_fake
 
   player:

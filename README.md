@@ -44,7 +44,7 @@ cp .env.example .env
 # edit .env with your API endpoint, token, and optional overrides
 ```
 
-Environment variables are documented inline in `.env.example`; copy it and adjust values for your deployment. Add secrets such as `TORRENT_TELEGRAM_BOT_TOKEN` to `.env` (or export them) before running any scripts.
+Environment variables are documented inline in `.env.example`; copy it and adjust values for your deployment. Add secrets such as `TELEGRAM_BOT_TOKEN` to `.env` (or export them) before running any scripts.
 
 ### Install npm
 
@@ -60,7 +60,7 @@ nvm use --lts
 | Command | Purpose |
 | --- | --- |
 | `npm run cli` | Start the Ink CLI via `tsx src/cli.tsx`. |
-| `npm run bot` | Launch the Telegram bot (requires `TORRENT_TELEGRAM_BOT_TOKEN`). |
+| `npm run bot` | Launch the Telegram bot (requires `TELEGRAM_BOT_TOKEN`). |
 | `npm run test` | Run the full TypeScript test suite via `tsx --test`. |
 | `npm run build` | Type-check and emit compiled JS to `dist/`. |
 | `npm run lint` | TypeScript strictness check (`tsc --noEmit`). |
@@ -70,4 +70,4 @@ All runtime scripts load configuration from `loadConfig()` so the same `.env` dr
 ## Usage
 
 - CLI: run `npm run cli` for interactive search and download management.
-- Telegram bot: export `TORRENT_TELEGRAM_BOT_TOKEN` and run `npm run bot` to expose the same job state via Telegram chats.
+- Telegram bot: export `TELEGRAM_BOT_TOKEN` and run `npm run bot` to expose the same job state via Telegram chats.
