@@ -7,6 +7,7 @@ import type { Config, OwnedJob } from '../types.js';
 const createTestConfig = (): Config => ({
   apiBaseUrl: 'http://localhost:8000/api',
   apiToken: 'test-token',
+  timezone: 'UTC',
   pollingIntervalMs: 1000,
   searchLimit: 5,
   searchPageSize: 5,

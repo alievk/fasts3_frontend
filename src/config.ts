@@ -4,6 +4,7 @@ import type { BotTranslationsBundle, ClientDbProvider, Config } from './types.js
 
 dotenv.config();
 
+const DEFAULT_TIMEZONE = 'UTC';
 const DEFAULT_API_BASE_URL = 'http://localhost:8000/api';
 const DEFAULT_POLLING_MS = 3000;
 const DEFAULT_SEARCH_LIMIT = 5;
@@ -65,7 +66,15 @@ const resolveBotTranslationsBundle = (): BotTranslationsBundle => {
   return 'bot';
 };
 
+const resolveTimezone = (): string => {
+  const value = process.env.TZ?.trim();
+  const timezone = value && value.length > 0 ? value : DEFAULT_TIMEZONE;
+  process.env.TZ = timezone;
+  return timezone;
+};
+
 export const loadConfig = (): Config => {
+  const timezone = resolveTimezone();
   const apiBaseUrl = process.env.API_URL ?? DEFAULT_API_BASE_URL;
   const pollingEnv = process.env.CLI_POLL_MS;
   const pollingIntervalMs =
@@ -115,6 +124,7 @@ export const loadConfig = (): Config => {
     d1DatabaseId,
     d1ApiToken,
     botLocale,
-    botTranslationsBundle
+    botTranslationsBundle,
+    timezone
   };
 };

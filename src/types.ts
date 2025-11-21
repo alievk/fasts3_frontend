@@ -78,6 +78,7 @@ export interface CreateJobResponse {
 export interface Config {
   apiBaseUrl: string;
   apiToken?: string;
+  timezone: string;
   pollingIntervalMs: number;
   searchLimit: number;
   searchPageSize: number;
