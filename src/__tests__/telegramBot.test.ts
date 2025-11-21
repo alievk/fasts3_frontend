@@ -19,7 +19,8 @@ const createTestConfig = (): Config => ({
   d1AccountId: undefined,
   d1DatabaseId: undefined,
   d1ApiToken: undefined,
-  botLocale: 'en'
+  botLocale: 'en',
+  botTranslationsBundle: 'bot'
 });
 
 class StubDownloadService extends EventEmitter {

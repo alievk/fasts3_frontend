@@ -9,6 +9,13 @@ services:
     command: >
       sh -c "npm install --no-audit --no-fund && npm run bot"
 
+  bot-fake:
+    extends:
+      service: bot
+    environment:
+      TORRENT_TELEGRAM_BOT_TOKEN: 8470570517:AAESl-V5QrI28i1_gs3JqQJTmF6RVWT1pjU
+      TELEGRAM_LOCALE: bot_fake
+
   player:
     image: node:20-alpine
     working_dir: /app

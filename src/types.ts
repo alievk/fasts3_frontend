@@ -75,8 +75,6 @@ export interface CreateJobResponse {
   s3ObjectKey: string | null;
 }
 
-export type ClientDbProvider = 'sqlite' | 'd1';
-
 export interface Config {
   apiBaseUrl: string;
   apiToken?: string;
@@ -93,7 +91,14 @@ export interface Config {
   d1DatabaseId?: string;
   d1ApiToken?: string;
   botLocale?: string;
+  botTranslationsBundle: BotTranslationsBundle;
 }
+
+export type ClientDbProvider = 'sqlite' | 'd1';
+
+export type BotTranslations = Record<string, Record<string, string | string[]>>;
+
+export type BotTranslationsBundle = 'bot' | 'bot_fake';
 
 export interface ApiClient {
   search(query: string): Promise<SearchResult[]>;

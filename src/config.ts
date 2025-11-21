@@ -1,6 +1,6 @@
 import path from 'node:path';
 import dotenv from 'dotenv';
-import { ClientDbProvider, Config } from './types.js';
+import type { BotTranslationsBundle, ClientDbProvider, Config } from './types.js';
 
 dotenv.config();
 
@@ -53,6 +53,17 @@ const resolveClientDbProvider = (): ClientDbProvider => {
   throw new Error(`Unsupported TORRENT_CLIENT_DB_PROVIDER: ${raw}`);
 };
 
+const resolveBotTranslationsBundle = (): BotTranslationsBundle => {
+  const raw = process.env.TELEGRAM_LOCALE?.trim().toLowerCase();
+  if (raw === 'bot_fake') {
+    return 'bot_fake';
+  }
+  if (raw && raw !== 'bot') {
+    console.warn(`Unknown TELEGRAM_LOCALE "${raw}", falling back to "bot"`);
+  }
+  return 'bot';
+};
+
 export const loadConfig = (): Config => {
   const apiBaseUrl = process.env.TORRENT_API_URL ?? DEFAULT_API_BASE_URL;
   const pollingEnv = process.env.TORRENT_CLI_POLL_MS;
@@ -76,6 +87,7 @@ export const loadConfig = (): Config => {
     throw new Error('PLAYER_BASE_URL is required');
   }
   const botLocale = process.env.TORRENT_TELEGRAM_BOT_LOCALE?.toLowerCase();
+  const botTranslationsBundle = resolveBotTranslationsBundle();
   const clientDbProvider = resolveClientDbProvider();
   const d1AccountId = process.env.CLOUDFLARE_ACCOUNT_ID;
   const d1DatabaseId = process.env.CLOUDFLARE_D1_DATABASE_ID;
@@ -101,6 +113,7 @@ export const loadConfig = (): Config => {
     d1AccountId,
     d1DatabaseId,
     d1ApiToken,
-    botLocale
+    botLocale,
+    botTranslationsBundle
   };
 };

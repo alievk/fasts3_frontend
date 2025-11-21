@@ -40,7 +40,8 @@ const buildConfig = (provider: 'sqlite' | 'd1'): Config => ({
   d1AccountId: provider === 'd1' ? 'acc' : undefined,
   d1DatabaseId: provider === 'd1' ? 'db' : undefined,
   d1ApiToken: provider === 'd1' ? 'token' : undefined,
-  botLocale: 'en'
+  botLocale: 'ru',
+  botTranslationsBundle: 'bot'
 });
 
 const runCommonAssertions = async (registry: ClientRegistry) => {

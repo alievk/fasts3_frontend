@@ -4,12 +4,13 @@ import type { Context } from 'telegraf';
 import { createApiClient } from './apiClient.js';
 import { DownloadService } from './downloadService.js';
 import { Poller } from './poller.js';
-import type { ApiClient, ClientRegistry, Config, SearchResultPipeline } from './types.js';
+import type { ApiClient, BotTranslations, ClientRegistry, Config, SearchResultPipeline } from './types.js';
 import { JobStatus, OwnedJob, SearchResult, SearchResultDetail } from './types.js';
 import { normalizeHash } from './hashUtils.js';
 import { createSearchPipeline } from './searchPipeline.js';
 import { createClientRegistry } from './clientRegistry.js';
 import botTranslationsData from './locales/bot.json' with { type: 'json' };
+import botFakeTranslationsData from './locales/bot_fake.json' with { type: 'json' };
 
 type SendMessageExtra = Parameters<Telegraf['telegram']['sendMessage']>[2];
 type EditMessageTextExtra = Parameters<Context['editMessageText']>[1];
@@ -34,7 +35,12 @@ const withDisabledPreviewEdit = (extra?: EditMessageTextExtra): EditMessageTextE
   } as EditMessageTextExtra);
 
 let config: Config;
-const botTranslations = botTranslationsData as Record<string, Record<string, string | string[]>>;
+const TRANSLATION_BUNDLES: Record<'bot' | 'bot_fake', BotTranslations> = {
+  bot: botTranslationsData as BotTranslations,
+  bot_fake: botFakeTranslationsData as BotTranslations
+};
+
+let botTranslations: BotTranslations = TRANSLATION_BUNDLES.bot;
 type TranslationParams = Record<string, string | number>;
 const PRIMARY_LOCALE = 'ru';
 const isSupportedLocale = (locale?: string): locale is string =>
@@ -724,6 +730,7 @@ export const createTelegramBot = (
   deps: TelegramBotDependencies = {}
 ): TelegramBotRuntime => {
   config = providedConfig;
+  botTranslations = TRANSLATION_BUNDLES[config.botTranslationsBundle] ?? TRANSLATION_BUNDLES.bot;
   defaultLocale = isSupportedLocale(config.botLocale) ? config.botLocale : PRIMARY_LOCALE;
   searchPageSize = config.searchPageSize;
   apiClient = deps.apiClient ?? createApiClient();
