@@ -11,13 +11,16 @@
     "lint": "tsc --noEmit",
     "test": "tsx --test src/__tests__/**/*.test.ts",
     "bot": "tsx src/telegramBotMain.ts",
+    "webhook-server": "tsx src/webhookServer.ts",
     "serve-player": "node scripts/servePlayer.mjs"
   },
   "dependencies": {
     "@types/better-sqlite3": "^7.6.13",
+    "fastify": "^5.2.1",
     "better-sqlite3": "^12.4.1",
     "clipboardy": "4.0.0",
     "dotenv": "16.4.5",
+    "ipaddr.js": "^2.2.0",
     "ink": "6.3.1",
     "ink-select-input": "6.2.0",
     "ink-text-input": "6.0.0",

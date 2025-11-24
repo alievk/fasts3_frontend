@@ -32,6 +32,21 @@ services:
     command: >
       sh -c "npm install --no-audit --no-fund && npm run serve-player"
 
+  webhook:
+    image: node:20-alpine
+    working_dir: /app
+    env_file: .env
+    environment:
+      TZ: ${TZ:-UTC}
+    volumes:
+      - .:/app
+      - webhook_node_modules:/app/node_modules
+    ports:
+      - "8040:8040"
+    command: >
+      sh -c "npm install --no-audit --no-fund && npm run webhook-server"
+
 volumes:
   telegram_bot_node_modules:
   player_node_modules:
+  webhook_node_modules:
