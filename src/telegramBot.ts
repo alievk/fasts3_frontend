@@ -4,11 +4,11 @@ import type { Context } from 'telegraf';
 import { createApiClient } from './apiClient.js';
 import { DownloadService } from './downloadService.js';
 import { Poller } from './poller.js';
-import type { ApiClient, BotTranslations, ClientRegistry, Config, SearchResultPipeline } from './types.js';
+import type { ApiClient, BotTranslations, ChatRegistry, Config, SearchResultPipeline } from './types.js';
 import { JobStatus, OwnedJob, SearchResult, SearchResultDetail } from './types.js';
 import { normalizeHash } from './hashUtils.js';
 import { createSearchPipeline } from './searchPipeline.js';
-import { createClientRegistry } from './clientRegistry.js';
+import { createChatRegistry } from './chatRegistry.js';
 import botTranslationsData from './locales/bot.json' with { type: 'json' };
 import botFakeTranslationsData from './locales/bot_fake.json' with { type: 'json' };
 
@@ -148,7 +148,7 @@ const sendStartMessage = async (
   await sendTelegramMessage(chatId, content.text, content.extra);
 };
 let apiClient: ApiClient;
-let clientRegistry: ClientRegistry;
+let chatRegistry: ChatRegistry;
 let searchPipeline: SearchResultPipeline;
 let downloadService: DownloadService;
 let poller: Poller;
@@ -230,21 +230,19 @@ const parseDetailToken = (token: string | undefined | null): { provider: string;
 const searchSessions = new Map<number, SearchSession>();
 const removalSuppressions = new Map<string, string>();
 
-const buildTelegramClientId = (chatId: number): string => `telegram:${chatId}`;
-
-const ensureTelegramClient = async (chatId: number): Promise<string> => {
-  const clientId = buildTelegramClientId(chatId);
-  const record = await clientRegistry.registerClient(clientId, { type: 'telegram', chatId });
+const ensureTelegramChat = async (chatId: number): Promise<string> => {
+  const telegramId = String(chatId);
+  const record = await chatRegistry.registerChat(telegramId);
   cacheChatLocale(chatId, record.locale ?? null);
-  return clientId;
+  return telegramId;
 };
 
-const getJobForClient = (jobId: string): OwnedJob | undefined =>
+const getJobForChat = (jobId: string): OwnedJob | undefined =>
   downloadService.getJobs().find((item) => item.jobId === jobId);
 
-const findOwnedJob = (jobId: string, clientId: string): OwnedJob | undefined => {
-  const job = getJobForClient(jobId);
-  if (!job || job.clientId !== clientId) {
+const findOwnedJob = (jobId: string, telegramId: string): OwnedJob | undefined => {
+  const job = getJobForChat(jobId);
+  if (!job || job.telegramId !== telegramId) {
     return undefined;
   }
   return job;
@@ -320,16 +318,8 @@ const broadcast = async (message: MessageBuilder, options?: { excludeChatId?: nu
 };
 
 const getJobOwnerChatId = (job: OwnedJob): number | null => {
-  const prefix = 'telegram:';
-  if (!job.clientId.startsWith(prefix)) {
-    return null;
-  }
-  const rawId = job.clientId.slice(prefix.length);
-  const parsed = Number.parseInt(rawId, 10);
-  if (!Number.isFinite(parsed)) {
-    return null;
-  }
-  return parsed;
+  const parsed = Number.parseInt(job.telegramId, 10);
+  return Number.isFinite(parsed) ? parsed : null;
 };
 
 const notifyJobOwner = async (
@@ -693,11 +683,11 @@ const buildJobActionsKeyboard = (job: OwnedJob, locale: string) => {
 
 const sendJobDetailMessage = async (
   chatId: number,
-  clientId: string,
+  telegramId: string,
   jobId: string,
   replyFn: (text: string, extra?: SendMessageExtra) => Promise<unknown>
 ): Promise<void> => {
-  const job = findOwnedJob(jobId, clientId);
+  const job = findOwnedJob(jobId, telegramId);
   if (!job) {
     await replyFn(translateForChat(chatId, 'jobs.notFound', { jobId }));
     return;
@@ -707,9 +697,9 @@ const sendJobDetailMessage = async (
   await replyFn(formatJobDetail(job, locale), { ...keyboard, parse_mode: 'HTML' as const });
 };
 
-const sendJobList = async (chatId: number, clientId: string) => {
+const sendJobList = async (chatId: number, telegramId: string) => {
   const locale = getChatLocale(chatId);
-  const jobs = downloadService.getJobsForClient(clientId);
+  const jobs = downloadService.getJobsForChat(telegramId);
   if (jobs.length === 0) {
     await sendTelegramMessage(chatId, translate('jobs.listEmpty', locale));
     return;
@@ -733,7 +723,7 @@ export type TelegramBotRuntime = {
 
 type TelegramBotDependencies = {
   apiClient?: ApiClient;
-  clientRegistry?: ClientRegistry;
+  chatRegistry?: ChatRegistry;
   searchPipeline?: SearchResultPipeline;
   downloadService?: DownloadService;
   poller?: Poller;
@@ -749,10 +739,10 @@ export const createTelegramBot = (
   defaultLocale = isSupportedLocale(config.botLocale) ? config.botLocale : PRIMARY_LOCALE;
   searchPageSize = config.searchPageSize;
   apiClient = deps.apiClient ?? createApiClient();
-  clientRegistry = deps.clientRegistry ?? createClientRegistry(config);
+  chatRegistry = deps.chatRegistry ?? createChatRegistry(config);
   searchPipeline = deps.searchPipeline ?? createSearchPipeline(config);
   downloadService =
-    deps.downloadService ?? new DownloadService(apiClient, clientRegistry, config.searchLimit, searchPipeline);
+    deps.downloadService ?? new DownloadService(apiClient, chatRegistry, config.searchLimit, searchPipeline);
   poller = deps.poller ?? new Poller(downloadService, config.pollingIntervalMs);
   const telegramIpv4Agent = new HttpsAgent({ family: 4 });
   bot = new Telegraf(botToken, { telegram: { agent: telegramIpv4Agent } });
@@ -761,7 +751,7 @@ export const createTelegramBot = (
     const chatId = getPrivateChatId(ctx);
     if (chatId !== undefined) {
       activeChats.add(chatId);
-      await ensureTelegramClient(chatId);
+      await ensureTelegramChat(chatId);
     }
     await ensureBootstrapped();
     return next();
@@ -782,8 +772,8 @@ export const createTelegramBot = (
     }
     const jobPayload = parseJobPayload(payload);
     if (jobPayload) {
-      const clientId = await ensureTelegramClient(chatId);
-      await sendJobDetailMessage(chatId, clientId, jobPayload, (text, extra) =>
+      const telegramId = await ensureTelegramChat(chatId);
+      await sendJobDetailMessage(chatId, telegramId, jobPayload, (text, extra) =>
         ctx.reply(text, withDisabledPreview(extra))
       );
       return;
@@ -923,8 +913,8 @@ export const createTelegramBot = (
     if (chatId === undefined) {
       return;
     }
-    const clientId = await ensureTelegramClient(chatId);
-    await sendJobList(chatId, clientId);
+    const telegramId = await ensureTelegramChat(chatId);
+    await sendJobList(chatId, telegramId);
   });
 
   bot.action(new RegExp(`^${SUBSCRIPTION_PAYLOAD_PREFIX}(.+)$`), async (ctx) => {
@@ -998,11 +988,11 @@ export const createTelegramBot = (
       );
       return;
     }
-    const clientId = await ensureTelegramClient(chatId);
+    const telegramId = await ensureTelegramChat(chatId);
     try {
-      const existingJobs = downloadService.getJobsForClient(clientId);
+      const existingJobs = downloadService.getJobsForChat(telegramId);
       const knownJobIds = new Set(existingJobs.map((job) => job.jobId));
-      const job = await downloadService.startDownload(detail, clientId);
+      const job = await downloadService.startDownload(detail, telegramId);
       const isExistingJob = knownJobIds.has(job.jobId);
 
       if (isExistingJob) {
@@ -1047,8 +1037,8 @@ export const createTelegramBot = (
       return;
     }
     await safeAnswerCallback(ctx);
-    const clientId = await ensureTelegramClient(chatId);
-    await sendJobDetailMessage(chatId, clientId, jobId, (text, extra) =>
+    const telegramId = await ensureTelegramChat(chatId);
+    await sendJobDetailMessage(chatId, telegramId, jobId, (text, extra) =>
       ctx.reply(text, withDisabledPreview(extra))
     );
   });
@@ -1064,8 +1054,8 @@ export const createTelegramBot = (
     }
     await safeAnswerCallback(ctx);
     await downloadService.syncJob(jobId);
-    const clientId = await ensureTelegramClient(chatId);
-    const job = findOwnedJob(jobId, clientId);
+    const telegramId = await ensureTelegramChat(chatId);
+    const job = findOwnedJob(jobId, telegramId);
     if (!job) {
       await safeEditMessageText(
         ctx,
@@ -1093,8 +1083,8 @@ export const createTelegramBot = (
       return;
     }
     await safeAnswerCallback(ctx);
-    const clientId = await ensureTelegramClient(chatId);
-    const existing = findOwnedJob(jobId, clientId);
+    const telegramId = await ensureTelegramChat(chatId);
+    const existing = findOwnedJob(jobId, telegramId);
     if (!existing) {
       await safeEditMessageText(
         ctx,
@@ -1103,7 +1093,7 @@ export const createTelegramBot = (
       );
       return;
     }
-    removalSuppressions.set(jobId, clientId);
+    removalSuppressions.set(jobId, telegramId);
     await downloadService.remove(jobId);
     try {
       await safeEditMessageText(
@@ -1114,7 +1104,7 @@ export const createTelegramBot = (
     } catch (error) {
       console.error('Failed to edit job message after deletion:', error);
     }
-    await sendJobList(chatId, clientId);
+    await sendJobList(chatId, telegramId);
   });
 
   bot.action(/^set-locale:(\w+)$/i, async (ctx) => {
@@ -1125,9 +1115,9 @@ export const createTelegramBot = (
       await safeAnswerCallback(ctx);
       return;
     }
-    const clientId = await ensureTelegramClient(chatId);
+    const telegramId = await ensureTelegramChat(chatId);
     const newLocale = setChatLocale(chatId, requested);
-    await clientRegistry.setClientLocale(clientId, newLocale === defaultLocale ? null : newLocale);
+    await chatRegistry.setChatLocale(telegramId, newLocale === defaultLocale ? null : newLocale);
     await safeAnswerCallback(ctx);
     await sendTelegramMessage(
       chatId,
@@ -1159,9 +1149,9 @@ export const createTelegramBot = (
 
   downloadService.on('jobRemoved', (job) => {
     completedJobs.delete(job.jobId);
-    const suppressedClientId = removalSuppressions.get(job.jobId);
+    const suppressedTelegramId = removalSuppressions.get(job.jobId);
     removalSuppressions.delete(job.jobId);
-    if (suppressedClientId && suppressedClientId === job.clientId) {
+    if (suppressedTelegramId && suppressedTelegramId === job.telegramId) {
       return;
     }
     void notifyJobOwner(job, (chatId) =>

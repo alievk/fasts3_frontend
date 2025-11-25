@@ -1,7 +1,7 @@
 import EventEmitter from 'node:events';
 import {
   ApiClient,
-  ClientRegistry,
+  ChatRegistry,
   JobDetail,
   JobStatus,
   OwnedJob,
@@ -89,10 +89,10 @@ export class DownloadService extends EventEmitter {
 
   constructor(
     private readonly apiClient: ApiClient,
-    private readonly clientRegistry: ClientRegistry,
+    private readonly chatRegistry: ChatRegistry,
     private readonly searchLimit: number,
     private readonly searchPipeline: SearchResultPipeline = [],
-    private readonly defaultClientId?: string
+    private readonly defaultTelegramId?: string
   ) {
     super();
   }
@@ -123,7 +123,7 @@ export class DownloadService extends EventEmitter {
       return;
     }
 
-    const storedJobs = await this.clientRegistry.listAllJobs();
+    const storedJobs = await this.chatRegistry.listAllJobs();
     storedJobs.forEach((job) => {
       this.jobs.set(job.jobId, job);
     });
@@ -135,9 +135,9 @@ export class DownloadService extends EventEmitter {
     return [...this.jobs.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
 
-  getJobsForClient(clientId?: string): OwnedJob[] {
-    const owner = this.resolveClientId(clientId);
-    return this.getJobs().filter((job) => job.clientId === owner);
+  getJobsForChat(telegramId?: string): OwnedJob[] {
+    const owner = this.resolveTelegramId(telegramId);
+    return this.getJobs().filter((job) => job.telegramId === owner);
   }
 
   async search(query: string): Promise<SearchResult[]> {
@@ -170,14 +170,14 @@ export class DownloadService extends EventEmitter {
     };
   }
 
-  async startDownload(result: SearchResultDetail, clientId?: string): Promise<OwnedJob> {
-    const owner = this.resolveClientId(clientId);
+  async startDownload(result: SearchResultDetail, telegramId?: string): Promise<OwnedJob> {
+    const owner = this.resolveTelegramId(telegramId);
     try {
       const canonicalHash =
         normalizeHash(result.hash ?? null) ?? extractHashFromMagnet(result.magnet);
 
       if (canonicalHash) {
-        const existingJobs = this.getJobsForClient(owner).filter((job) =>
+        const existingJobs = this.getJobsForChat(owner).filter((job) =>
           normalizeHash(job.hash) === canonicalHash
         );
         if (existingJobs.length > 0) {
@@ -188,7 +188,7 @@ export class DownloadService extends EventEmitter {
           );
           await this.syncJob(best.jobId);
           const refreshed =
-            this.jobs.get(best.jobId) ?? (await this.clientRegistry.getJob(best.jobId)) ?? best;
+            this.jobs.get(best.jobId) ?? (await this.chatRegistry.getJob(best.jobId)) ?? best;
           return refreshed;
         }
       }
@@ -207,7 +207,7 @@ export class DownloadService extends EventEmitter {
         shortUrl: response.shortUrl,
         s3ObjectKey: response.s3ObjectKey
       });
-      const owned = await this.clientRegistry.bindJobToClient(stored, owner);
+      const owned = await this.chatRegistry.bindJobToChat(stored, owner);
       this.jobs.set(owned.jobId, owned);
       this.emit('jobUpdated', owned);
       if (response.status === 'completed' || response.status === 'error') {
@@ -238,15 +238,15 @@ export class DownloadService extends EventEmitter {
         return;
       }
 
-      const existing = this.jobs.get(jobId) ?? (await this.clientRegistry.getJob(jobId));
+      const existing = this.jobs.get(jobId) ?? (await this.chatRegistry.getJob(jobId));
       if (!existing) {
         return;
       }
       let updated = mapDetailToStored(detail, existing ?? undefined);
 
-      const owned: OwnedJob = { ...updated, clientId: existing.clientId };
+      const owned: OwnedJob = { ...updated, telegramId: existing.telegramId };
       this.jobs.set(jobId, owned);
-      await this.clientRegistry.updateJob(owned);
+      await this.chatRegistry.updateJob(owned);
       this.emit('jobUpdated', owned);
     } catch (error) {
       this.emit('error', error instanceof Error ? error : new Error(String(error)));
@@ -274,12 +274,12 @@ export class DownloadService extends EventEmitter {
   }
 
   private async removeLocal(jobId: string): Promise<void> {
-    const existing = this.jobs.get(jobId) ?? (await this.clientRegistry.getJob(jobId));
+    const existing = this.jobs.get(jobId) ?? (await this.chatRegistry.getJob(jobId));
     if (!existing) {
       return;
     }
     this.jobs.delete(jobId);
-    await this.clientRegistry.deleteJob(jobId);
+    await this.chatRegistry.deleteJob(jobId);
     this.emit('jobRemoved', existing);
   }
 
@@ -330,10 +330,10 @@ export class DownloadService extends EventEmitter {
     return output;
   }
 
-  private resolveClientId(clientId?: string): string {
-    const resolved = clientId ?? this.defaultClientId;
+  private resolveTelegramId(telegramId?: string): string {
+    const resolved = telegramId ?? this.defaultTelegramId;
     if (!resolved) {
-      throw new Error('clientId is required');
+      throw new Error('telegramId is required');
     }
     return resolved;
   }

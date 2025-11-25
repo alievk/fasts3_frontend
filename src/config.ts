@@ -41,7 +41,7 @@ const resolveClientDbPath = (): string => {
     return path.resolve(explicitPath);
   }
 
-  return path.resolve('.cache', 'torrent-cli', 'clients.sqlite');
+  return path.resolve('.cache', 'torrent-cli', 'users.sqlite');
 };
 
 const resolveClientDbProvider = (): ClientDbProvider => {

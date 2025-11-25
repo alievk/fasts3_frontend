@@ -110,38 +110,31 @@ export interface ApiClient {
   health(): Promise<HealthResponse>;
 }
 
-export type ClientTransport =
-  | { type: 'telegram'; chatId: number }
-  | { type: 'cli'; profile?: string }
-  | { type: 'web'; profile?: string };
-
-export interface ClientRecord {
-  clientId: string;
-  transport: ClientTransport;
+export interface ChatRecord {
+  telegramId: string;
   createdAt: string;
   updatedAt: string;
   locale?: string | null;
 }
 
 export interface OwnedJob extends StoredJob {
-  clientId: string;
+  telegramId: string;
 }
 
-export interface ClientNotificationTarget {
-  clientId: string;
-  transport: ClientTransport;
+export interface ChatNotificationTarget {
+  telegramId: string;
   locale?: string | null;
 }
 
-export interface ClientRegistry {
-  registerClient(clientId: string, transport: ClientTransport): Promise<ClientRecord>;
-  listJobs(clientId: string): Promise<OwnedJob[]>;
+export interface ChatRegistry {
+  registerChat(telegramId: string): Promise<ChatRecord>;
+  listJobs(telegramId: string): Promise<OwnedJob[]>;
   listAllJobs(): Promise<OwnedJob[]>;
   getJob(jobId: string): Promise<OwnedJob | undefined>;
-  bindJobToClient(job: StoredJob, clientId: string): Promise<OwnedJob>;
+  bindJobToChat(job: StoredJob, telegramId: string): Promise<OwnedJob>;
   updateJob(job: OwnedJob): Promise<void>;
   deleteJob(jobId: string): Promise<void>;
-  getNotificationTargets(jobId: string): Promise<ClientNotificationTarget[]>;
-  getClientLocale(clientId: string): Promise<string | null>;
-  setClientLocale(clientId: string, locale: string | null): Promise<void>;
+  getNotificationTargets(jobId: string): Promise<ChatNotificationTarget[]>;
+  getChatLocale(telegramId: string): Promise<string | null>;
+  setChatLocale(telegramId: string, locale: string | null): Promise<void>;
 }

@@ -1,16 +1,7 @@
-import {
-  ClientNotificationTarget,
-  ClientRecord,
-  ClientRegistry,
-  ClientTransport,
-  OwnedJob,
-  StoredJob
-} from './types.js';
+import { ChatNotificationTarget, ChatRecord, ChatRegistry, OwnedJob, StoredJob } from './types.js';
 
-type ClientRow = {
-  client_id: string;
-  transport_type: string;
-  transport_payload: string;
+type UserRow = {
+  telegram_id: string;
   created_at: string;
   updated_at: string;
   locale: string | null;
@@ -18,7 +9,7 @@ type ClientRow = {
 
 type JobRow = {
   job_id: string;
-  client_id: string;
+  telegram_id: string;
   payload: string;
   created_at: string;
   updated_at: string;
@@ -38,21 +29,17 @@ type D1Response = {
   result?: D1QueryResult[];
 };
 
-const serializeTransport = (transport: ClientTransport): string => JSON.stringify(transport);
-const deserializeTransport = (payload: string): ClientTransport => JSON.parse(payload) as ClientTransport;
-
 const serializeJob = (job: OwnedJob): string => JSON.stringify(job);
 const deserializeJob = (payload: string): OwnedJob => JSON.parse(payload) as OwnedJob;
 
-const toClientRecord = (row: ClientRow): ClientRecord => ({
-  clientId: row.client_id,
-  transport: deserializeTransport(row.transport_payload),
+const toChatRecord = (row: UserRow): ChatRecord => ({
+  telegramId: row.telegram_id,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
   locale: row.locale ?? null
 });
 
-export class D1ClientRegistry implements ClientRegistry {
+export class D1ChatRegistry implements ChatRegistry {
   private readonly endpoint: string;
   private readonly ready: Promise<void>;
 
@@ -67,30 +54,28 @@ export class D1ClientRegistry implements ClientRegistry {
     this.ready = this.initSchema();
   }
 
-  async registerClient(clientId: string, transport: ClientTransport): Promise<ClientRecord> {
+  async registerChat(telegramId: string): Promise<ChatRecord> {
     await this.ready;
     const timestamp = new Date().toISOString();
     await this.execute(
       `
-      INSERT INTO clients (client_id, transport_type, transport_payload, locale, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?)
-      ON CONFLICT(client_id) DO UPDATE SET
-        transport_type = excluded.transport_type,
-        transport_payload = excluded.transport_payload,
+      INSERT INTO users (telegram_id, locale, created_at, updated_at)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(telegram_id) DO UPDATE SET
         updated_at = excluded.updated_at
     `.trim(),
-      [clientId, transport.type, serializeTransport(transport), null, timestamp, timestamp]
+      [telegramId, null, timestamp, timestamp]
     );
-    const row = await this.getClientRow(clientId);
+    const row = await this.getUserRow(telegramId);
     if (!row) {
-      throw new Error(`Failed to load client ${clientId} after upsert`);
+      throw new Error(`Failed to load user ${telegramId} after upsert`);
     }
-    return toClientRecord(row);
+    return toChatRecord(row);
   }
 
-  async listJobs(clientId: string): Promise<OwnedJob[]> {
+  async listJobs(telegramId: string): Promise<OwnedJob[]> {
     await this.ready;
-    const rows = await this.query<JobRow>('SELECT * FROM jobs WHERE client_id = ? ORDER BY created_at DESC', [clientId]);
+    const rows = await this.query<JobRow>('SELECT * FROM jobs WHERE telegram_id = ? ORDER BY created_at DESC', [telegramId]);
     return rows.map((row) => deserializeJob(row.payload));
   }
 
@@ -107,9 +92,9 @@ export class D1ClientRegistry implements ClientRegistry {
     return row ? deserializeJob(row.payload) : undefined;
   }
 
-  async bindJobToClient(job: StoredJob, clientId: string): Promise<OwnedJob> {
+  async bindJobToChat(job: StoredJob, telegramId: string): Promise<OwnedJob> {
     await this.ready;
-    const owned: OwnedJob = { ...job, clientId };
+    const owned: OwnedJob = { ...job, telegramId };
     await this.saveJob(owned);
     return owned;
   }
@@ -124,51 +109,48 @@ export class D1ClientRegistry implements ClientRegistry {
     await this.execute('DELETE FROM jobs WHERE job_id = ?', [jobId]);
   }
 
-  async getNotificationTargets(jobId: string): Promise<ClientNotificationTarget[]> {
+  async getNotificationTargets(jobId: string): Promise<ChatNotificationTarget[]> {
     await this.ready;
-    const rows = await this.query<ClientRow>(
+    const rows = await this.query<UserRow>(
       `
-      SELECT c.*
+      SELECT u.*
       FROM jobs j
-      JOIN clients c ON c.client_id = j.client_id
+      JOIN users u ON u.telegram_id = j.telegram_id
       WHERE j.job_id = ?
     `.trim(),
       [jobId]
     );
     return rows.map((row) => ({
-      clientId: row.client_id,
-      transport: deserializeTransport(row.transport_payload),
+      telegramId: row.telegram_id,
       locale: row.locale ?? null
     }));
   }
 
-  async getClientLocale(clientId: string): Promise<string | null> {
+  async getChatLocale(telegramId: string): Promise<string | null> {
     await this.ready;
-    const rows = await this.query<{ locale: string | null }>('SELECT locale FROM clients WHERE client_id = ?', [clientId]);
+    const rows = await this.query<{ locale: string | null }>('SELECT locale FROM users WHERE telegram_id = ?', [telegramId]);
     return rows[0]?.locale ?? null;
   }
 
-  async setClientLocale(clientId: string, locale: string | null): Promise<void> {
+  async setChatLocale(telegramId: string, locale: string | null): Promise<void> {
     await this.ready;
     const timestamp = new Date().toISOString();
     await this.execute(
       `
-      UPDATE clients
+      UPDATE users
       SET locale = ?,
           updated_at = ?
-      WHERE client_id = ?
+      WHERE telegram_id = ?
     `.trim(),
-      [locale, timestamp, clientId]
+      [locale, timestamp, telegramId]
     );
   }
 
   private async initSchema(): Promise<void> {
     const statements = [
       `
-      CREATE TABLE IF NOT EXISTS clients (
-        client_id TEXT PRIMARY KEY,
-        transport_type TEXT NOT NULL,
-        transport_payload TEXT NOT NULL,
+      CREATE TABLE IF NOT EXISTS users (
+        telegram_id TEXT PRIMARY KEY,
         locale TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
@@ -177,14 +159,14 @@ export class D1ClientRegistry implements ClientRegistry {
       `
       CREATE TABLE IF NOT EXISTS jobs (
         job_id TEXT PRIMARY KEY,
-        client_id TEXT NOT NULL,
+        telegram_id TEXT NOT NULL,
         payload TEXT NOT NULL,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
-        FOREIGN KEY (client_id) REFERENCES clients(client_id) ON DELETE CASCADE
+        FOREIGN KEY (telegram_id) REFERENCES users(telegram_id) ON DELETE CASCADE
       )
     `.trim(),
-      'CREATE INDEX IF NOT EXISTS jobs_client_id_idx ON jobs(client_id)'
+      'CREATE INDEX IF NOT EXISTS jobs_telegram_id_idx ON jobs(telegram_id)'
     ];
     for (const sql of statements) {
       await this.execute(sql);
@@ -195,19 +177,19 @@ export class D1ClientRegistry implements ClientRegistry {
     const timestamp = new Date().toISOString();
     await this.execute(
       `
-      INSERT INTO jobs (job_id, client_id, payload, created_at, updated_at)
+      INSERT INTO jobs (job_id, telegram_id, payload, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?)
       ON CONFLICT(job_id) DO UPDATE SET
-        client_id = excluded.client_id,
+        telegram_id = excluded.telegram_id,
         payload = excluded.payload,
         updated_at = excluded.updated_at
     `.trim(),
-      [job.jobId, job.clientId, serializeJob(job), timestamp, timestamp]
+      [job.jobId, job.telegramId, serializeJob(job), timestamp, timestamp]
     );
   }
 
-  private async getClientRow(clientId: string): Promise<ClientRow | undefined> {
-    const rows = await this.query<ClientRow>('SELECT * FROM clients WHERE client_id = ?', [clientId]);
+  private async getUserRow(telegramId: string): Promise<UserRow | undefined> {
+    const rows = await this.query<UserRow>('SELECT * FROM users WHERE telegram_id = ?', [telegramId]);
     return rows[0];
   }
 

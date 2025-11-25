@@ -1,19 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import Database from 'better-sqlite3';
-import {
-  ClientNotificationTarget,
-  ClientRecord,
-  ClientRegistry,
-  ClientTransport,
-  OwnedJob,
-  StoredJob
-} from './types.js';
+import { ChatNotificationTarget, ChatRecord, ChatRegistry, OwnedJob, StoredJob } from './types.js';
 
-type ClientRow = {
-  client_id: string;
-  transport_type: string;
-  transport_payload: string;
+type UserRow = {
+  telegram_id: string;
   created_at: string;
   updated_at: string;
   locale: string | null;
@@ -21,7 +12,7 @@ type ClientRow = {
 
 type JobRow = {
   job_id: string;
-  client_id: string;
+  telegram_id: string;
   payload: string;
   created_at: string;
   updated_at: string;
@@ -31,33 +22,29 @@ const ensureDirectory = (filePath: string): void => {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
 };
 
-const serializeTransport = (transport: ClientTransport): string => JSON.stringify(transport);
-const deserializeTransport = (payload: string): ClientTransport => JSON.parse(payload) as ClientTransport;
-
 const serializeJob = (job: OwnedJob): string => JSON.stringify(job);
 const deserializeJob = (payload: string): OwnedJob => JSON.parse(payload) as OwnedJob;
 
-const toClientRecord = (row: ClientRow): ClientRecord => ({
-  clientId: row.client_id,
-  transport: deserializeTransport(row.transport_payload),
+const toChatRecord = (row: UserRow): ChatRecord => ({
+  telegramId: row.telegram_id,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
   locale: row.locale ?? null
 });
 
-export class SQLiteClientRegistry implements ClientRegistry {
+export class SQLiteChatRegistry implements ChatRegistry {
   private db: Database.Database;
 
-  private upsertClientStmt: Database.Statement;
-  private getClientStmt: Database.Statement;
+  private upsertUserStmt: Database.Statement;
+  private getUserStmt: Database.Statement;
   private listJobsStmt: Database.Statement;
   private listAllJobsStmt: Database.Statement;
   private getJobStmt: Database.Statement;
   private upsertJobStmt: Database.Statement;
   private deleteJobStmt: Database.Statement;
   private notificationTargetsStmt: Database.Statement;
-  private getClientLocaleStmt: Database.Statement;
-  private setClientLocaleStmt: Database.Statement;
+  private getChatLocaleStmt: Database.Statement;
+  private setChatLocaleStmt: Database.Statement;
 
   constructor(private readonly dbPath: string) {
     ensureDirectory(dbPath);
@@ -65,26 +52,24 @@ export class SQLiteClientRegistry implements ClientRegistry {
     this.db.pragma('journal_mode = WAL');
     this.db.pragma('foreign_keys = ON');
     this.initSchema();
-    this.upsertClientStmt = this.db.prepare(
+    this.upsertUserStmt = this.db.prepare(
       `
-      INSERT INTO clients (client_id, transport_type, transport_payload, locale, created_at, updated_at)
-      VALUES (@clientId, @transportType, @payload, @locale, @createdAt, @updatedAt)
-      ON CONFLICT(client_id) DO UPDATE SET
-        transport_type = excluded.transport_type,
-        transport_payload = excluded.transport_payload,
+      INSERT INTO users (telegram_id, locale, created_at, updated_at)
+      VALUES (@telegramId, @locale, @createdAt, @updatedAt)
+      ON CONFLICT(telegram_id) DO UPDATE SET
         updated_at = excluded.updated_at
     `.trim()
     );
-    this.getClientStmt = this.db.prepare('SELECT * FROM clients WHERE client_id = ?');
-    this.listJobsStmt = this.db.prepare('SELECT * FROM jobs WHERE client_id = ? ORDER BY created_at DESC');
+    this.getUserStmt = this.db.prepare('SELECT * FROM users WHERE telegram_id = ?');
+    this.listJobsStmt = this.db.prepare('SELECT * FROM jobs WHERE telegram_id = ? ORDER BY created_at DESC');
     this.listAllJobsStmt = this.db.prepare('SELECT * FROM jobs ORDER BY created_at DESC');
     this.getJobStmt = this.db.prepare('SELECT * FROM jobs WHERE job_id = ?');
     this.upsertJobStmt = this.db.prepare(
       `
-      INSERT INTO jobs (job_id, client_id, payload, created_at, updated_at)
-      VALUES (@jobId, @clientId, @payload, @createdAt, @updatedAt)
+      INSERT INTO jobs (job_id, telegram_id, payload, created_at, updated_at)
+      VALUES (@jobId, @telegramId, @payload, @createdAt, @updatedAt)
       ON CONFLICT(job_id) DO UPDATE SET
-        client_id = excluded.client_id,
+        telegram_id = excluded.telegram_id,
         payload = excluded.payload,
         updated_at = excluded.updated_at
     `.trim()
@@ -92,42 +77,40 @@ export class SQLiteClientRegistry implements ClientRegistry {
     this.deleteJobStmt = this.db.prepare('DELETE FROM jobs WHERE job_id = ?');
     this.notificationTargetsStmt = this.db.prepare(
       `
-      SELECT c.*
+      SELECT u.*
       FROM jobs j
-      JOIN clients c ON c.client_id = j.client_id
+      JOIN users u ON u.telegram_id = j.telegram_id
       WHERE j.job_id = ?
     `.trim()
     );
-    this.getClientLocaleStmt = this.db.prepare('SELECT locale FROM clients WHERE client_id = ?');
-    this.setClientLocaleStmt = this.db.prepare(
+    this.getChatLocaleStmt = this.db.prepare('SELECT locale FROM users WHERE telegram_id = ?');
+    this.setChatLocaleStmt = this.db.prepare(
       `
-      UPDATE clients
+      UPDATE users
       SET locale = @locale,
           updated_at = @updatedAt
-      WHERE client_id = @clientId
+      WHERE telegram_id = @telegramId
     `.trim()
     );
   }
 
-  async registerClient(clientId: string, transport: ClientTransport): Promise<ClientRecord> {
+  async registerChat(telegramId: string): Promise<ChatRecord> {
     const timestamp = new Date().toISOString();
-    this.upsertClientStmt.run({
-      clientId,
-      transportType: transport.type,
-      payload: serializeTransport(transport),
+    this.upsertUserStmt.run({
+      telegramId,
       locale: null,
       createdAt: timestamp,
       updatedAt: timestamp
     });
-    const row = this.getClientStmt.get(clientId) as ClientRow | undefined;
+    const row = this.getUserStmt.get(telegramId) as UserRow | undefined;
     if (!row) {
-      throw new Error(`Failed to load client ${clientId} after upsert`);
+      throw new Error(`Failed to load user ${telegramId} after upsert`);
     }
-    return toClientRecord(row);
+    return toChatRecord(row);
   }
 
-  async listJobs(clientId: string): Promise<OwnedJob[]> {
-    const rows = this.listJobsStmt.all(clientId) as JobRow[];
+  async listJobs(telegramId: string): Promise<OwnedJob[]> {
+    const rows = this.listJobsStmt.all(telegramId) as JobRow[];
     return rows.map((row) => deserializeJob(row.payload));
   }
 
@@ -141,8 +124,8 @@ export class SQLiteClientRegistry implements ClientRegistry {
     return row ? deserializeJob(row.payload) : undefined;
   }
 
-  async bindJobToClient(job: StoredJob, clientId: string): Promise<OwnedJob> {
-    const owned: OwnedJob = { ...job, clientId };
+  async bindJobToChat(job: StoredJob, telegramId: string): Promise<OwnedJob> {
+    const owned: OwnedJob = { ...job, telegramId };
     await this.saveJob(owned);
     return owned;
   }
@@ -155,24 +138,23 @@ export class SQLiteClientRegistry implements ClientRegistry {
     this.deleteJobStmt.run(jobId);
   }
 
-  async getNotificationTargets(jobId: string): Promise<ClientNotificationTarget[]> {
-    const rows = this.notificationTargetsStmt.all(jobId) as ClientRow[];
+  async getNotificationTargets(jobId: string): Promise<ChatNotificationTarget[]> {
+    const rows = this.notificationTargetsStmt.all(jobId) as UserRow[];
     return rows.map((row) => ({
-      clientId: row.client_id,
-      transport: deserializeTransport(row.transport_payload),
+      telegramId: row.telegram_id,
       locale: row.locale ?? null
     }));
   }
 
-  async getClientLocale(clientId: string): Promise<string | null> {
-    const row = this.getClientLocaleStmt.get(clientId) as { locale: string | null } | undefined;
+  async getChatLocale(telegramId: string): Promise<string | null> {
+    const row = this.getChatLocaleStmt.get(telegramId) as { locale: string | null } | undefined;
     return row?.locale ?? null;
   }
 
-  async setClientLocale(clientId: string, locale: string | null): Promise<void> {
+  async setChatLocale(telegramId: string, locale: string | null): Promise<void> {
     const timestamp = new Date().toISOString();
-    this.setClientLocaleStmt.run({
-      clientId,
+    this.setChatLocaleStmt.run({
+      telegramId,
       locale,
       updatedAt: timestamp
     });
@@ -181,23 +163,21 @@ export class SQLiteClientRegistry implements ClientRegistry {
   private initSchema(): void {
     this.db.exec(
       `
-      CREATE TABLE IF NOT EXISTS clients (
-        client_id TEXT PRIMARY KEY,
-        transport_type TEXT NOT NULL,
-        transport_payload TEXT NOT NULL,
+      CREATE TABLE IF NOT EXISTS users (
+        telegram_id TEXT PRIMARY KEY,
         locale TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
       CREATE TABLE IF NOT EXISTS jobs (
         job_id TEXT PRIMARY KEY,
-        client_id TEXT NOT NULL,
+        telegram_id TEXT NOT NULL,
         payload TEXT NOT NULL,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
-        FOREIGN KEY (client_id) REFERENCES clients(client_id) ON DELETE CASCADE
+        FOREIGN KEY (telegram_id) REFERENCES users(telegram_id) ON DELETE CASCADE
       );
-      CREATE INDEX IF NOT EXISTS jobs_client_id_idx ON jobs(client_id);
+      CREATE INDEX IF NOT EXISTS jobs_telegram_id_idx ON jobs(telegram_id);
     `.trim()
     );
   }
@@ -206,7 +186,7 @@ export class SQLiteClientRegistry implements ClientRegistry {
     const timestamp = new Date().toISOString();
     this.upsertJobStmt.run({
       jobId: job.jobId,
-      clientId: job.clientId,
+      telegramId: job.telegramId,
       payload: serializeJob(job),
       createdAt: timestamp,
       updatedAt: timestamp

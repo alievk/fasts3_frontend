@@ -31,7 +31,7 @@ class StubDownloadService extends EventEmitter {
   getJobs(): OwnedJob[] {
     return [];
   }
-  getJobsForClient(): OwnedJob[] {
+  getJobsForChat(): OwnedJob[] {
     return [];
   }
   async search(): Promise<never[]> {
@@ -166,7 +166,7 @@ test('job completion notifies owner only once', async () => {
   await runtime.start();
   const job: OwnedJob = {
     jobId: 'job-1',
-    clientId: 'telegram:42',
+    telegramId: '42',
     hash: 'hash',
     label: 'Test job',
     createdAt: new Date().toISOString(),

@@ -4,11 +4,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import Database from 'better-sqlite3';
-import { createClientRegistry } from '../clientRegistry.js';
-import { MemoryClientRegistry } from '../memoryClientRegistry.js';
-import { SQLiteClientRegistry } from '../sqliteClientRegistry.js';
-import { D1ClientRegistry } from '../d1ClientRegistry.js';
-import { ClientRegistry, Config, StoredJob } from '../types.js';
+import { createChatRegistry } from '../chatRegistry.js';
+import { MemoryChatRegistry } from '../memoryChatRegistry.js';
+import { SQLiteChatRegistry } from '../sqliteChatRegistry.js';
+import { D1ChatRegistry } from '../d1ChatRegistry.js';
+import { ChatRegistry, Config, StoredJob } from '../types.js';
 
 const baseJob = (): StoredJob => ({
   jobId: 'job-1',
@@ -45,18 +45,18 @@ const buildConfig = (provider: 'sqlite' | 'd1'): Config => ({
   botTranslationsBundle: 'bot'
 });
 
-const runCommonAssertions = async (registry: ClientRegistry) => {
-  const clientId = 'client-1';
-  const firstRecord = await registry.registerClient(clientId, { type: 'cli', profile: 'test' });
+const runCommonAssertions = async (registry: ChatRegistry) => {
+  const telegramId = 'telegram-1';
+  const firstRecord = await registry.registerChat(telegramId);
   assert.equal(firstRecord.locale ?? null, null);
-  await registry.setClientLocale(clientId, 'en');
-  assert.equal(await registry.getClientLocale(clientId), 'en');
-  const secondRecord = await registry.registerClient(clientId, { type: 'cli', profile: 'test' });
+  await registry.setChatLocale(telegramId, 'en');
+  assert.equal(await registry.getChatLocale(telegramId), 'en');
+  const secondRecord = await registry.registerChat(telegramId);
   assert.equal(secondRecord.locale, 'en');
-  await registry.bindJobToClient(baseJob(), clientId);
-  const jobs = await registry.listJobs(clientId);
+  await registry.bindJobToChat(baseJob(), telegramId);
+  const jobs = await registry.listJobs(telegramId);
   assert.equal(jobs.length, 1);
-  assert.equal(jobs[0]?.clientId, clientId);
+  assert.equal(jobs[0]?.telegramId, telegramId);
 
   const owned = jobs[0];
   if (!owned) {
@@ -70,10 +70,10 @@ const runCommonAssertions = async (registry: ClientRegistry) => {
   assert.equal(refreshed?.lastKnownStatus, 'completed');
   const targets = await registry.getNotificationTargets(owned.jobId);
   assert.equal(targets.length, 1);
-  assert.equal(targets[0]?.transport.type, 'cli');
+  assert.equal(targets[0]?.telegramId, telegramId);
 
   await registry.deleteJob(owned.jobId);
-  const afterDelete = await registry.listJobs(clientId);
+  const afterDelete = await registry.listJobs(telegramId);
   assert.equal(afterDelete.length, 0);
 };
 
@@ -102,38 +102,38 @@ const createSqliteBackedFetch = () => {
   };
 };
 
-test('memory client registry stores and retrieves jobs', async () => {
-  const registry = new MemoryClientRegistry();
+test('memory chat registry stores and retrieves jobs', async () => {
+  const registry = new MemoryChatRegistry();
   await runCommonAssertions(registry);
 });
 
-test('sqlite client registry persists data on disk', async () => {
-  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'client-registry-'));
-  const dbPath = path.join(tmpDir, 'clients.sqlite');
-  const registry = new SQLiteClientRegistry(dbPath);
-  await registry.registerClient('client-1', { type: 'cli' });
-  await registry.bindJobToClient(baseJob(), 'client-1');
-  const reopened = new SQLiteClientRegistry(dbPath);
+test('sqlite chat registry persists data on disk', async () => {
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'chat-registry-'));
+  const dbPath = path.join(tmpDir, 'users.sqlite');
+  const registry = new SQLiteChatRegistry(dbPath);
+  await registry.registerChat('telegram-1');
+  await registry.bindJobToChat(baseJob(), 'telegram-1');
+  const reopened = new SQLiteChatRegistry(dbPath);
   const jobs = await reopened.listAllJobs();
   assert.equal(jobs.length, 1);
-  assert.equal(jobs[0]?.clientId, 'client-1');
+  assert.equal(jobs[0]?.telegramId, 'telegram-1');
   await runCommonAssertions(reopened);
   await fs.rm(tmpDir, { recursive: true, force: true });
 });
 
-test('createClientRegistry returns sqlite registry when requested', async () => {
-  const registry = createClientRegistry(buildConfig('sqlite'));
-  assert.ok(registry instanceof SQLiteClientRegistry);
+test('createChatRegistry returns sqlite registry when requested', async () => {
+  const registry = createChatRegistry(buildConfig('sqlite'));
+  assert.ok(registry instanceof SQLiteChatRegistry);
   await runCommonAssertions(registry);
 });
 
-test('createClientRegistry returns d1 registry when requested', async () => {
+test('createChatRegistry returns d1 registry when requested', async () => {
   const fetchStub = createSqliteBackedFetch();
   const originalFetch = global.fetch;
   (global as any).fetch = fetchStub;
   try {
-    const registry = createClientRegistry(buildConfig('d1'));
-    assert.ok(registry instanceof D1ClientRegistry);
+    const registry = createChatRegistry(buildConfig('d1'));
+    assert.ok(registry instanceof D1ChatRegistry);
     await runCommonAssertions(registry);
   } finally {
     (global as any).fetch = originalFetch;

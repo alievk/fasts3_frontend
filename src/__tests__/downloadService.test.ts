@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { DownloadService } from '../downloadService.js';
-import { MemoryClientRegistry } from '../memoryClientRegistry.js';
+import { MemoryChatRegistry } from '../memoryChatRegistry.js';
 import type {
   ApiClient,
   CreateJobResponse,
@@ -66,7 +66,7 @@ const baseDetail = (overrides: Partial<SearchResultDetail> = {}): SearchResultDe
 test('getSearchResultDetail prefers search result title when both have names', async () => {
   const searchResult = baseSearchResult({ title: 'From Search' });
   const detail = baseDetail({ title: 'From Detail' });
-  const service = new DownloadService(new StubApiClient(detail), new MemoryClientRegistry(), 10);
+  const service = new DownloadService(new StubApiClient(detail), new MemoryChatRegistry(), 10);
 
   const resolved = await service.getSearchResultDetail(searchResult);
   assert.ok(resolved);
@@ -76,7 +76,7 @@ test('getSearchResultDetail prefers search result title when both have names', a
 test('getSearchResultDetail falls back to detail title when search title is just ID', async () => {
   const searchResult = baseSearchResult({ id: 'id-1', title: 'id-1' });
   const detail = baseDetail({ id: 'id-1', title: 'From Detail' });
-  const service = new DownloadService(new StubApiClient(detail), new MemoryClientRegistry(), 10);
+  const service = new DownloadService(new StubApiClient(detail), new MemoryChatRegistry(), 10);
 
   const resolved = await service.getSearchResultDetail(searchResult);
   assert.ok(resolved);
@@ -86,10 +86,9 @@ test('getSearchResultDetail falls back to detail title when search title is just
 test('getSearchResultDetail falls back to ID when both titles are IDs', async () => {
   const searchResult = baseSearchResult({ id: 'id-2', title: 'id-2' });
   const detail = baseDetail({ id: 'id-2', title: 'id-2' });
-  const service = new DownloadService(new StubApiClient(detail), new MemoryClientRegistry(), 10);
+  const service = new DownloadService(new StubApiClient(detail), new MemoryChatRegistry(), 10);
 
   const resolved = await service.getSearchResultDetail(searchResult);
   assert.ok(resolved);
   assert.equal(resolved.title, 'id-2');
 });
-
