@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import EventEmitter from 'node:events';
 import { test } from 'node:test';
 import { createTelegramBot } from '../telegramBot.js';
+import { MemoryChatRegistry } from '../memoryChatRegistry.js';
 import type { Config, OwnedJob } from '../types.js';
 
 const createTestConfig = (): Config => ({
@@ -15,11 +16,10 @@ const createTestConfig = (): Config => ({
   searchMinSizeBytes: undefined,
   searchMaxSizeBytes: undefined,
   playerBaseUrl: 'http://localhost/player',
-  userDbProvider: 'sqlite',
-  userDbPath: ':memory:',
-  d1AccountId: undefined,
-  d1DatabaseId: undefined,
-  d1ApiToken: undefined,
+  userDbProvider: 'd1',
+  d1AccountId: 'test-acc',
+  d1DatabaseId: 'test-db',
+  d1ApiToken: 'test-token',
   botLocale: 'en',
   botTranslationsBundle: 'bot'
 });
@@ -60,7 +60,8 @@ const createRuntimeWithStubs = () => {
   const runtime = createTelegramBot('test-token', config, {
     downloadService: downloadService as unknown as any,
     poller: poller as unknown as any,
-    apiClient: {} as any
+    apiClient: {} as any,
+    chatRegistry: new MemoryChatRegistry()
   });
   const sentMessages: { chatId: number; text: string; replyMarkup?: unknown }[] = [];
   (runtime.bot.telegram as any).sendMessage = async (chatId: number, text: string) => {

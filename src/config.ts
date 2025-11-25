@@ -1,4 +1,3 @@
-import path from 'node:path';
 import dotenv from 'dotenv';
 import type { BotTranslationsBundle, Config, UserDbProvider } from './types.js';
 
@@ -35,21 +34,9 @@ const parsePositiveFloat = (value: string | undefined): number | undefined => {
   return parsed;
 };
 
-const resolveUserDbPath = (): string => {
-  const explicitPath = process.env.USER_DB_PATH;
-  if (explicitPath) {
-    return path.resolve(explicitPath);
-  }
-
-  return path.resolve('.cache', 'db', 'users.sqlite');
-};
-
 const resolveUserDbProvider = (): UserDbProvider => {
   const raw = process.env.USER_DB_PROVIDER?.toLowerCase().trim();
-  if (!raw || raw === 'sqlite') {
-    return 'sqlite';
-  }
-  if (raw === 'd1') {
+  if (!raw || raw === 'd1') {
     return 'd1';
   }
   throw new Error(`Unsupported USER_DB_PROVIDER: ${raw}`);
@@ -122,7 +109,6 @@ export const loadConfig = (): Config => {
     searchMaxSizeBytes,
     playerBaseUrl,
     userDbProvider,
-    userDbPath: resolveUserDbPath(),
     d1AccountId,
     d1DatabaseId,
     d1ApiToken,

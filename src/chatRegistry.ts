@@ -1,6 +1,5 @@
 import { ChatRegistry, Config } from './types.js';
 import { D1ChatRegistry } from './d1ChatRegistry.js';
-import { SQLiteChatRegistry } from './sqliteChatRegistry.js';
 
 export const createChatRegistry = (config: Config): ChatRegistry => {
   if (config.userDbProvider === 'd1') {
@@ -9,7 +8,7 @@ export const createChatRegistry = (config: Config): ChatRegistry => {
     }
     return new D1ChatRegistry(config.d1AccountId, config.d1DatabaseId, config.d1ApiToken);
   }
-  return new SQLiteChatRegistry(config.userDbPath);
+  throw new Error(`Unsupported user DB provider: ${config.userDbProvider}`);
 };
 
 export { MemoryChatRegistry } from './memoryChatRegistry.js';

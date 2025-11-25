@@ -1,12 +1,7 @@
 import assert from 'node:assert/strict';
-import fs from 'node:fs/promises';
-import os from 'node:os';
-import path from 'node:path';
 import { test } from 'node:test';
-import Database from 'better-sqlite3';
 import { createChatRegistry } from '../chatRegistry.js';
 import { MemoryChatRegistry } from '../memoryChatRegistry.js';
-import { SQLiteChatRegistry } from '../sqliteChatRegistry.js';
 import { D1ChatRegistry } from '../d1ChatRegistry.js';
 import { ChatRegistry, Config, StoredJob } from '../types.js';
 
@@ -25,7 +20,7 @@ const baseJob = (): StoredJob => ({
   s3ObjectKey: null
 });
 
-const buildConfig = (provider: 'sqlite' | 'd1'): Config => ({
+const buildConfig = (provider: 'd1'): Config => ({
   apiBaseUrl: 'http://localhost:8000/api',
   apiToken: 'token',
   timezone: 'UTC',
@@ -37,7 +32,6 @@ const buildConfig = (provider: 'sqlite' | 'd1'): Config => ({
   searchMaxSizeBytes: undefined,
   playerBaseUrl: 'http://localhost/player',
   userDbProvider: provider,
-  userDbPath: ':memory:',
   d1AccountId: provider === 'd1' ? 'acc' : undefined,
   d1DatabaseId: provider === 'd1' ? 'db' : undefined,
   d1ApiToken: provider === 'd1' ? 'token' : undefined,
@@ -77,29 +71,134 @@ const runCommonAssertions = async (registry: ChatRegistry) => {
   assert.equal(afterDelete.length, 0);
 };
 
-const createSqliteBackedFetch = () => {
-  const db = new Database(':memory:');
-  db.pragma('foreign_keys = ON');
-  return async (_url: string, init?: RequestInit) => {
+type FakeUserRow = {
+  telegram_id: string;
+  locale: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type FakeJobRow = {
+  job_id: string;
+  telegram_id: string;
+  payload: string;
+  created_at: string;
+  updated_at: string;
+};
+
+const createD1FetchStub = () => {
+  const users = new Map<string, FakeUserRow>();
+  const jobs = new Map<string, FakeJobRow>();
+
+  const response = (results: unknown[]) =>
+    new Response(
+      JSON.stringify({
+        success: true,
+        errors: [],
+        result: [{ success: true, results }]
+      }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } }
+    );
+
+  const toJobList = (): FakeJobRow[] =>
+    Array.from(jobs.values()).sort((a, b) => (a.created_at > b.created_at ? -1 : 1));
+
+  const handler = async (_url: string, init?: RequestInit) => {
     const rawBody = init?.body ?? '{}';
     const bodyText = typeof rawBody === 'string' ? rawBody : rawBody?.toString() ?? '{}';
     const payload = JSON.parse(bodyText);
-    const sql = (payload.sql as string | undefined) ?? '';
-    const params = Array.isArray(payload.params) ? payload.params : [];
-    const args = params as any[];
-    const stmt = db.prepare(sql);
-    const command = sql.trim().split(/\s+/)[0]?.toLowerCase();
-    const results = command === 'select' ? stmt.all(...args) : (stmt.run(...args), []);
-    const responsePayload = {
-      success: true,
-      errors: [],
-      result: [{ success: true, results }]
-    };
-    return new Response(JSON.stringify(responsePayload), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' }
-    });
+    const sql: string = payload.sql ?? '';
+    const params: unknown[] = Array.isArray(payload.params) ? payload.params : [];
+    const normalized = sql.trim().toLowerCase();
+
+    if (normalized.startsWith('create table') || normalized.startsWith('create index')) {
+      return response([]);
+    }
+
+    if (normalized.startsWith('insert into users')) {
+      const [telegramId, locale, createdAt, updatedAt] = params as [string, string | null, string, string];
+      const existing = users.get(telegramId);
+      const next: FakeUserRow = {
+        telegram_id: telegramId,
+        locale: existing?.locale ?? locale ?? null,
+        created_at: existing?.created_at ?? createdAt,
+        updated_at: updatedAt
+      };
+      users.set(telegramId, next);
+      return response([]);
+    }
+
+    if (normalized.startsWith('select * from users')) {
+      const [telegramId] = params as [string];
+      const row = users.get(telegramId);
+      return response(row ? [row] : []);
+    }
+
+    if (normalized.startsWith('select locale from users')) {
+      const [telegramId] = params as [string];
+      const row = users.get(telegramId);
+      return response(row ? [{ locale: row.locale }] : []);
+    }
+
+    if (normalized.startsWith('update users')) {
+      const [locale, updatedAt, telegramId] = params as [string | null, string, string];
+      const existing = users.get(telegramId);
+      if (existing) {
+        users.set(telegramId, { ...existing, locale, updated_at: updatedAt });
+      }
+      return response([]);
+    }
+
+    if (normalized.startsWith('insert into jobs')) {
+      const [jobId, telegramId, payloadText, createdAt, updatedAt] = params as [string, string, string, string, string];
+      const existing = jobs.get(jobId);
+      const next: FakeJobRow = {
+        job_id: jobId,
+        telegram_id: telegramId,
+        payload: payloadText,
+        created_at: existing?.created_at ?? createdAt,
+        updated_at: updatedAt
+      };
+      jobs.set(jobId, next);
+      return response([]);
+    }
+
+    if (normalized.startsWith('select * from jobs where job_id')) {
+      const [jobId] = params as [string];
+      const row = jobs.get(jobId);
+      return response(row ? [row] : []);
+    }
+
+    if (normalized.startsWith('select * from jobs where telegram_id')) {
+      const [telegramId] = params as [string];
+      const rows = toJobList().filter((row) => row.telegram_id === telegramId);
+      return response(rows);
+    }
+
+    if (normalized.startsWith('select * from jobs order by')) {
+      return response(toJobList());
+    }
+
+    if (normalized.startsWith('delete from jobs')) {
+      const [jobId] = params as [string];
+      jobs.delete(jobId);
+      return response([]);
+    }
+
+    if (normalized.startsWith('select u.*')) {
+      const [jobId] = params as [string];
+      const job = jobs.get(jobId);
+      if (!job) {
+        return response([]);
+      }
+      const user = users.get(job.telegram_id);
+      return response(user ? [user] : []);
+    }
+
+    throw new Error(`Unhandled SQL in stub: ${sql}`);
   };
+
+  return handler;
 };
 
 test('memory chat registry stores and retrieves jobs', async () => {
@@ -107,28 +206,8 @@ test('memory chat registry stores and retrieves jobs', async () => {
   await runCommonAssertions(registry);
 });
 
-test('sqlite chat registry persists data on disk', async () => {
-  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'chat-registry-'));
-  const dbPath = path.join(tmpDir, 'users.sqlite');
-  const registry = new SQLiteChatRegistry(dbPath);
-  await registry.registerChat('telegram-1');
-  await registry.bindJobToChat(baseJob(), 'telegram-1');
-  const reopened = new SQLiteChatRegistry(dbPath);
-  const jobs = await reopened.listAllJobs();
-  assert.equal(jobs.length, 1);
-  assert.equal(jobs[0]?.telegramId, 'telegram-1');
-  await runCommonAssertions(reopened);
-  await fs.rm(tmpDir, { recursive: true, force: true });
-});
-
-test('createChatRegistry returns sqlite registry when requested', async () => {
-  const registry = createChatRegistry(buildConfig('sqlite'));
-  assert.ok(registry instanceof SQLiteChatRegistry);
-  await runCommonAssertions(registry);
-});
-
 test('createChatRegistry returns d1 registry when requested', async () => {
-  const fetchStub = createSqliteBackedFetch();
+  const fetchStub = createD1FetchStub();
   const originalFetch = global.fetch;
   (global as any).fetch = fetchStub;
   try {
