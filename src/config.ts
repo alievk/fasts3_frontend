@@ -36,7 +36,7 @@ const parsePositiveFloat = (value: string | undefined): number | undefined => {
 };
 
 const resolveUserDbPath = (): string => {
-  const explicitPath = process.env.USER_DB_PATH ?? process.env.LOCAL_SQLITE_DB_PATH;
+  const explicitPath = process.env.USER_DB_PATH;
   if (explicitPath) {
     return path.resolve(explicitPath);
   }
