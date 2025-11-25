@@ -20,6 +20,9 @@ const createTestConfig = (): Config => ({
   d1AccountId: 'test-acc',
   d1DatabaseId: 'test-db',
   d1ApiToken: 'test-token',
+  paymentProvider: 'yookassa',
+  yookassaShopId: 'shop',
+  yookassaSecretKey: 'secret',
   botLocale: 'en',
   botTranslationsBundle: 'bot'
 });
@@ -53,6 +56,20 @@ const createRuntimeWithStubs = () => {
     process.env.PLAYER_BASE_URL = config.playerBaseUrl;
   }
   const downloadService = new StubDownloadService();
+  const paymentStore = {
+    listVisiblePlans: async () => [],
+    getPlan: async () => undefined,
+    findPendingOrder: async () => undefined,
+    createOrder: async () => {
+      throw new Error('not implemented');
+    },
+    setOrderExternalId: async () => {}
+  };
+  const paymentClient = {
+    createPayment: async () => {
+      throw new Error('not implemented');
+    }
+  };
   const poller = {
     start(): void {},
     stop(): void {}
@@ -61,7 +78,9 @@ const createRuntimeWithStubs = () => {
     downloadService: downloadService as unknown as any,
     poller: poller as unknown as any,
     apiClient: {} as any,
-    chatRegistry: new MemoryChatRegistry()
+    chatRegistry: new MemoryChatRegistry(),
+    paymentStore: paymentStore as any,
+    paymentClient: paymentClient as any
   });
   const sentMessages: { chatId: number; text: string; replyMarkup?: unknown }[] = [];
   (runtime.bot.telegram as any).sendMessage = async (chatId: number, text: string) => {

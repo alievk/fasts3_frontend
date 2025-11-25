@@ -8,3 +8,10 @@ export type WebhookContext = {
 export type WebhookValidator = {
   validate: (context: WebhookContext) => Promise<boolean> | boolean;
 };
+
+export type WebhookResponse = {
+  status?: number;
+  body?: unknown;
+};
+
+export type WebhookHandler = (context: WebhookContext) => Promise<WebhookResponse | void> | WebhookResponse | void;

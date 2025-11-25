@@ -5,6 +5,7 @@ type UserRow = {
   created_at: string;
   updated_at: string;
   locale: string | null;
+  subscription_expires_at?: string | null;
 };
 
 type JobRow = {
@@ -152,6 +153,7 @@ export class D1ChatRegistry implements ChatRegistry {
       CREATE TABLE IF NOT EXISTS users (
         telegram_id TEXT PRIMARY KEY,
         locale TEXT,
+        subscription_expires_at TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       )
@@ -171,6 +173,7 @@ export class D1ChatRegistry implements ChatRegistry {
     for (const sql of statements) {
       await this.execute(sql);
     }
+    await this.ensureSubscriptionColumn();
   }
 
   private async saveJob(job: OwnedJob): Promise<void> {
@@ -245,5 +248,16 @@ export class D1ChatRegistry implements ChatRegistry {
       return 'D1 query failed';
     }
     return undefined;
+  }
+
+  private async ensureSubscriptionColumn(): Promise<void> {
+    try {
+      await this.execute('ALTER TABLE users ADD COLUMN subscription_expires_at TEXT');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!/duplicate column name/i.test(message)) {
+        throw error;
+      }
+    }
   }
 }

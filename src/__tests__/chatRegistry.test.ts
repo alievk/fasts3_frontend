@@ -35,6 +35,9 @@ const buildConfig = (provider: 'd1'): Config => ({
   d1AccountId: provider === 'd1' ? 'acc' : undefined,
   d1DatabaseId: provider === 'd1' ? 'db' : undefined,
   d1ApiToken: provider === 'd1' ? 'token' : undefined,
+  paymentProvider: 'yookassa',
+  yookassaShopId: 'shop',
+  yookassaSecretKey: 'secret',
   botLocale: 'ru',
   botTranslationsBundle: 'bot'
 });
@@ -112,6 +115,10 @@ const createD1FetchStub = () => {
     const normalized = sql.trim().toLowerCase();
 
     if (normalized.startsWith('create table') || normalized.startsWith('create index')) {
+      return response([]);
+    }
+
+    if (normalized.startsWith('alter table users add column subscription_expires_at')) {
       return response([]);
     }
 

@@ -4,13 +4,25 @@ import type { Context } from 'telegraf';
 import { createApiClient } from './apiClient.js';
 import { DownloadService } from './downloadService.js';
 import { Poller } from './poller.js';
-import type { ApiClient, BotTranslations, ChatRegistry, Config, SearchResultPipeline } from './types.js';
+import type {
+  ApiClient,
+  BotTranslations,
+  ChatRegistry,
+  Config,
+  PaymentClient,
+  PaymentOrder,
+  PaymentStatus,
+  PaymentPlan,
+  SearchResultPipeline
+} from './types.js';
 import { JobStatus, OwnedJob, SearchResult, SearchResultDetail } from './types.js';
 import { normalizeHash } from './hashUtils.js';
 import { createSearchPipeline } from './searchPipeline.js';
 import { createChatRegistry } from './chatRegistry.js';
 import botTranslationsData from './locales/bot.json' with { type: 'json' };
 import botFakeTranslationsData from './locales/bot_fake.json' with { type: 'json' };
+import { D1PaymentStore } from './d1PaymentStore.js';
+import { createPaymentClient } from './paymentClient.js';
 
 type SendMessageExtra = Parameters<Telegraf['telegram']['sendMessage']>[2];
 type EditMessageTextExtra = Parameters<Context['editMessageText']>[1];
@@ -38,6 +50,21 @@ let config: Config;
 const TRANSLATION_BUNDLES: Record<'bot' | 'bot_fake', BotTranslations> = {
   bot: botTranslationsData as BotTranslations,
   bot_fake: botFakeTranslationsData as BotTranslations
+};
+
+type PaymentStore = {
+  listVisiblePlans: () => Promise<PaymentPlan[]>;
+  getPlan: (planId: number) => Promise<PaymentPlan | undefined>;
+  findPendingOrder: (userId: string, planId: number, provider: string) => Promise<PaymentOrder | undefined>;
+  createOrder: (params: {
+    userId: string;
+    planId: number;
+    amount: number;
+    provider: string;
+    externalId?: string | null;
+    status?: PaymentStatus;
+  }) => Promise<PaymentOrder>;
+  setOrderExternalId: (orderId: number, externalId: string) => Promise<void>;
 };
 
 let botTranslations: BotTranslations = TRANSLATION_BUNDLES.bot;
@@ -123,15 +150,46 @@ const buildStartContent = (locale: string) => {
 };
 
 const SUBSCRIPTION_PAYLOAD_PREFIX = 'subscription:';
-const SUBSCRIPTION_OPTIONS = [
-  { key: 'subscription.pay3m', payload: `${SUBSCRIPTION_PAYLOAD_PREFIX}3m` },
-  { key: 'subscription.pay6m', payload: `${SUBSCRIPTION_PAYLOAD_PREFIX}6m` },
-  { key: 'subscription.pay1y', payload: `${SUBSCRIPTION_PAYLOAD_PREFIX}1y` }
-] as const;
+const formatPlanPrice = (price: number, locale: string): string => {
+  try {
+    return new Intl.NumberFormat(locale === 'ru' ? 'ru-RU' : 'en-US', {
+      style: 'currency',
+      currency: 'RUB',
+      maximumFractionDigits: 0
+    }).format(price);
+  } catch {
+    return `${price} RUB`;
+  }
+};
 
-const buildSubscriptionKeyboard = (locale: string) =>
+const formatPlanLabel = (plan: PaymentPlan, locale: string): string => {
+  const price = formatPlanPrice(plan.price, locale);
+  return `${plan.name} — ${price}`;
+};
+
+const formatPaymentLinkMessage = (plan: PaymentPlan, paymentUrl: string, locale: string): string => {
+  const price = formatPlanPrice(plan.price, locale);
+  const safeName = escapeHtml(plan.name);
+  const safeUrl = escapeHtml(paymentUrl);
+  return translate('subscription.paymentLinkHtml', locale, {
+    plan: safeName,
+    price,
+    link: `<a href="${safeUrl}">${translate('subscription.payLinkLabel', locale)}</a>`
+  });
+};
+
+const buildPaymentReturnUrl = (): string => {
+  const username = getBotUsername();
+  return `https://t.me/${username}`;
+};
+
+const formatOrderDescription = (orderId: number): string => `Order #${orderId}`;
+
+const buildSubscriptionKeyboard = (plans: PaymentPlan[], locale: string) =>
   Markup.inlineKeyboard(
-    SUBSCRIPTION_OPTIONS.map((option) => Markup.button.callback(translate(option.key, locale), option.payload)),
+    plans.map((plan) =>
+      Markup.button.callback(formatPlanLabel(plan, locale), `${SUBSCRIPTION_PAYLOAD_PREFIX}${plan.id}`)
+    ),
     { columns: 1 }
   );
 
@@ -152,6 +210,8 @@ let chatRegistry: ChatRegistry;
 let searchPipeline: SearchResultPipeline;
 let downloadService: DownloadService;
 let poller: Poller;
+let paymentStore: PaymentStore;
+let paymentClient: PaymentClient;
 let bot: Telegraf;
 let botUsername: string | undefined;
 const getBotUsername = (): string => {
@@ -727,6 +787,8 @@ type TelegramBotDependencies = {
   searchPipeline?: SearchResultPipeline;
   downloadService?: DownloadService;
   poller?: Poller;
+  paymentStore?: PaymentStore;
+  paymentClient?: PaymentClient;
 };
 
 export const createTelegramBot = (
@@ -744,6 +806,14 @@ export const createTelegramBot = (
   downloadService =
     deps.downloadService ?? new DownloadService(apiClient, chatRegistry, config.searchLimit, searchPipeline);
   poller = deps.poller ?? new Poller(downloadService, config.pollingIntervalMs);
+  paymentStore =
+    deps.paymentStore ??
+    (config.userDbProvider === 'd1'
+      ? new D1PaymentStore(config.d1AccountId!, config.d1DatabaseId!, config.d1ApiToken!)
+      : (() => {
+          throw new Error(`Unsupported user DB provider: ${config.userDbProvider}`);
+        })());
+  paymentClient = deps.paymentClient ?? createPaymentClient(config);
   const telegramIpv4Agent = new HttpsAgent({ family: 4 });
   bot = new Telegraf(botToken, { telegram: { agent: telegramIpv4Agent } });
 
@@ -815,7 +885,17 @@ export const createTelegramBot = (
       return;
     }
     const locale = getChatLocale(chatId);
-    const keyboard = buildSubscriptionKeyboard(locale);
+    let plans: PaymentPlan[] = [];
+    try {
+      plans = await paymentStore.listVisiblePlans();
+    } catch (error) {
+      console.error('Failed to load subscription plans:', error);
+    }
+    if (plans.length === 0) {
+      await ctx.reply(translateForChat(chatId, 'subscription.noPlans'), withDisabledPreview());
+      return;
+    }
+    const keyboard = buildSubscriptionKeyboard(plans, locale);
     const text = translateForChat(chatId, 'subscription.message');
     await ctx.reply(text, withDisabledPreview({ ...keyboard }));
   });
@@ -917,13 +997,64 @@ export const createTelegramBot = (
     await sendJobList(chatId, telegramId);
   });
 
-  bot.action(new RegExp(`^${SUBSCRIPTION_PAYLOAD_PREFIX}(.+)$`), async (ctx) => {
+  bot.action(new RegExp(`^${SUBSCRIPTION_PAYLOAD_PREFIX}(\\d+)$`), async (ctx) => {
+    const match = ctx.match as RegExpExecArray | undefined;
+    const rawPlanId = match?.[1];
+    const planId = rawPlanId ? Number.parseInt(rawPlanId, 10) : Number.NaN;
     const chatId = getPrivateChatId(ctx);
-    if (chatId === undefined) {
+    if (chatId === undefined || Number.isNaN(planId)) {
       await safeAnswerCallback(ctx);
       return;
     }
     await safeAnswerCallback(ctx);
+    const locale = getChatLocale(chatId);
+    const telegramId = await ensureTelegramChat(chatId);
+
+    let plan: PaymentPlan | undefined;
+    try {
+      plan = await paymentStore.getPlan(planId);
+    } catch (error) {
+      console.error('Failed to load plan:', error);
+    }
+    if (!plan || !plan.display) {
+      await ctx.reply(translate('subscription.noPlans', locale), withDisabledPreview());
+      return;
+    }
+
+    const provider = config.paymentProvider;
+    try {
+      let order = await paymentStore.findPendingOrder(telegramId, plan.id, provider);
+      if (!order) {
+        order = await paymentStore.createOrder({
+          userId: telegramId,
+          planId: plan.id,
+          amount: plan.price,
+          provider
+        });
+        console.log(
+          `[payment] created order id=${order.id} user=${order.userId} plan=${order.planId} amount=${order.amount} provider=${order.provider}`
+        );
+      } else {
+        console.log(
+          `[payment] reuse pending order id=${order.id} user=${order.userId} plan=${order.planId} amount=${order.amount} provider=${order.provider}`
+        );
+      }
+      const payment = await paymentClient.createPayment({
+        amount: plan.price,
+        description: formatOrderDescription(order.id),
+        returnUrl: buildPaymentReturnUrl(),
+        internalOrderId: order.id
+      });
+      console.log(
+        `[payment] payment link created order=${order.id} user=${order.userId} payment_id=${payment.id} url=${payment.confirmationUrl}`
+      );
+      await paymentStore.setOrderExternalId(order.id, payment.id);
+      const message = formatPaymentLinkMessage(plan, payment.confirmationUrl, locale);
+      await ctx.reply(message, withDisabledPreview({ parse_mode: 'HTML' as const }));
+    } catch (error) {
+      console.error('Failed to create payment link:', error);
+      await ctx.reply(translate('subscription.paymentFailed', locale), withDisabledPreview());
+    }
   });
 
   bot.action(/^page:(\d+)$/, async (ctx) => {

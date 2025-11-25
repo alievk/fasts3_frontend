@@ -1,5 +1,5 @@
 import dotenv from 'dotenv';
-import type { BotTranslationsBundle, Config, UserDbProvider } from './types.js';
+import type { BotTranslationsBundle, Config, PaymentProvider, UserDbProvider } from './types.js';
 
 dotenv.config();
 
@@ -40,6 +40,14 @@ const resolveUserDbProvider = (): UserDbProvider => {
     return 'd1';
   }
   throw new Error(`Unsupported USER_DB_PROVIDER: ${raw}`);
+};
+
+const resolvePaymentProvider = (): PaymentProvider => {
+  const raw = process.env.PAYMENT_PROVIDER?.toLowerCase().trim();
+  if (!raw || raw === 'yookassa') {
+    return 'yookassa';
+  }
+  throw new Error(`Unsupported PAYMENT_PROVIDER: ${raw}`);
 };
 
 const resolveBotTranslationsBundle = (): BotTranslationsBundle => {
@@ -89,6 +97,14 @@ export const loadConfig = (): Config => {
   }
   const botTranslationsBundle = resolveBotTranslationsBundle();
   const userDbProvider = resolveUserDbProvider();
+  const paymentProvider = resolvePaymentProvider();
+  const yookassaShopId = process.env.YOOKASSA_SHOP_ID;
+  const yookassaSecretKey = process.env.YOOKASSA_SECRET_KEY;
+  if (paymentProvider === 'yookassa') {
+    if (!yookassaShopId || !yookassaSecretKey) {
+      throw new Error('YOOKASSA_SHOP_ID and YOOKASSA_SECRET_KEY are required for Yookassa provider');
+    }
+  }
   const d1AccountId = process.env.CLOUDFLARE_ACCOUNT_ID;
   const d1DatabaseId = process.env.CLOUDFLARE_D1_DATABASE_ID;
   const d1ApiToken = process.env.CLOUDFLARE_API_TOKEN;
@@ -109,6 +125,9 @@ export const loadConfig = (): Config => {
     searchMaxSizeBytes,
     playerBaseUrl,
     userDbProvider,
+    paymentProvider,
+    yookassaShopId,
+    yookassaSecretKey,
     d1AccountId,
     d1DatabaseId,
     d1ApiToken,

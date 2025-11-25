@@ -90,11 +90,15 @@ export interface Config {
   d1AccountId?: string;
   d1DatabaseId?: string;
   d1ApiToken?: string;
+  paymentProvider: PaymentProvider;
+  yookassaShopId?: string;
+  yookassaSecretKey?: string;
   botLocale: string;
   botTranslationsBundle: BotTranslationsBundle;
 }
 
 export type UserDbProvider = 'd1';
+export type PaymentProvider = 'yookassa';
 
 export type BotTranslations = Record<string, Record<string, string | string[]>>;
 
@@ -137,3 +141,39 @@ export interface ChatRegistry {
   getChatLocale(telegramId: string): Promise<string | null>;
   setChatLocale(telegramId: string, locale: string | null): Promise<void>;
 }
+
+export type PaymentStatus = 'pending' | 'paid' | 'canceled';
+
+export type PaymentPlan = {
+  id: number;
+  name: string;
+  price: number;
+  durationDays: number;
+  display: boolean;
+};
+
+export type PaymentOrder = {
+  id: number;
+  userId: string;
+  planId: number;
+  amount: number;
+  provider: string;
+  externalId: string | null;
+  status: PaymentStatus;
+  createdAt: string;
+  paidAt: string | null;
+};
+
+export type PaymentLink = {
+  id: string;
+  confirmationUrl: string;
+};
+
+export type PaymentClient = {
+  createPayment: (input: {
+    amount: number;
+    description: string;
+    returnUrl: string;
+    internalOrderId: number;
+  }) => Promise<PaymentLink>;
+};
