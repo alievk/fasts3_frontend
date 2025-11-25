@@ -1,4 +1,5 @@
-COMPOSE = docker compose -f docker-compose.yml
+PROFILE = fake
+COMPOSE = docker compose -f docker-compose.yml --profile $(PROFILE)
 
 SRC_DIR = src
 BUILD_STAMP = .make/npm-build.stamp

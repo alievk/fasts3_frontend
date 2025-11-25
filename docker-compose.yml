@@ -10,6 +10,7 @@ services:
       - telegram_bot_node_modules:/app/node_modules
     command: >
       sh -c "npm install --no-audit --no-fund && npm run bot"
+    profiles: ["prod"]
 
   bot-fake:
     extends:
@@ -17,6 +18,7 @@ services:
     environment:
       TELEGRAM_BOT_TOKEN: 8470570517:AAESl-V5QrI28i1_gs3JqQJTmF6RVWT1pjU
       TELEGRAM_TRANSLATION_BUNDLE: bot_fake
+    profiles: ["fake"]
 
   player:
     image: node:20-alpine
