@@ -1,6 +1,6 @@
 import path from 'node:path';
 import dotenv from 'dotenv';
-import type { BotTranslationsBundle, ClientDbProvider, Config } from './types.js';
+import type { BotTranslationsBundle, Config, UserDbProvider } from './types.js';
 
 dotenv.config();
 
@@ -35,8 +35,8 @@ const parsePositiveFloat = (value: string | undefined): number | undefined => {
   return parsed;
 };
 
-const resolveClientDbPath = (): string => {
-  const explicitPath = process.env.CLIENT_DB_PATH ?? process.env.LOCAL_SQLITE_DB_PATH;
+const resolveUserDbPath = (): string => {
+  const explicitPath = process.env.USER_DB_PATH ?? process.env.LOCAL_SQLITE_DB_PATH;
   if (explicitPath) {
     return path.resolve(explicitPath);
   }
@@ -44,15 +44,15 @@ const resolveClientDbPath = (): string => {
   return path.resolve('.cache', 'torrent-cli', 'users.sqlite');
 };
 
-const resolveClientDbProvider = (): ClientDbProvider => {
-  const raw = process.env.CLIENT_DB_PROVIDER?.toLowerCase().trim();
+const resolveUserDbProvider = (): UserDbProvider => {
+  const raw = process.env.USER_DB_PROVIDER?.toLowerCase().trim();
   if (!raw || raw === 'sqlite') {
     return 'sqlite';
   }
   if (raw === 'd1') {
     return 'd1';
   }
-  throw new Error(`Unsupported CLIENT_DB_PROVIDER: ${raw}`);
+  throw new Error(`Unsupported USER_DB_PROVIDER: ${raw}`);
 };
 
 const resolveBotTranslationsBundle = (): BotTranslationsBundle => {
@@ -98,11 +98,11 @@ export const loadConfig = (): Config => {
   }
   const botLocale = process.env.TELEGRAM_BOT_LOCALE?.toLowerCase();
   const botTranslationsBundle = resolveBotTranslationsBundle();
-  const clientDbProvider = resolveClientDbProvider();
+  const userDbProvider = resolveUserDbProvider();
   const d1AccountId = process.env.CLOUDFLARE_ACCOUNT_ID;
   const d1DatabaseId = process.env.CLOUDFLARE_D1_DATABASE_ID;
   const d1ApiToken = process.env.CLOUDFLARE_API_TOKEN;
-  if (clientDbProvider === 'd1') {
+  if (userDbProvider === 'd1') {
     if (!d1AccountId || !d1DatabaseId || !d1ApiToken) {
       throw new Error('CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_D1_DATABASE_ID, and CLOUDFLARE_API_TOKEN are required for D1 provider');
     }
@@ -118,8 +118,8 @@ export const loadConfig = (): Config => {
     searchMinSizeBytes,
     searchMaxSizeBytes,
     playerBaseUrl,
-    clientDbProvider,
-    clientDbPath: resolveClientDbPath(),
+    userDbProvider,
+    userDbPath: resolveUserDbPath(),
     d1AccountId,
     d1DatabaseId,
     d1ApiToken,

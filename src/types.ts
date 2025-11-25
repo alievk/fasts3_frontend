@@ -86,8 +86,8 @@ export interface Config {
   searchMinSizeBytes?: number;
   searchMaxSizeBytes?: number;
   playerBaseUrl: string;
-  clientDbProvider: ClientDbProvider;
-  clientDbPath: string;
+  userDbProvider: UserDbProvider;
+  userDbPath: string;
   d1AccountId?: string;
   d1DatabaseId?: string;
   d1ApiToken?: string;
@@ -95,7 +95,7 @@ export interface Config {
   botTranslationsBundle: BotTranslationsBundle;
 }
 
-export type ClientDbProvider = 'sqlite' | 'd1';
+export type UserDbProvider = 'sqlite' | 'd1';
 
 export type BotTranslations = Record<string, Record<string, string | string[]>>;
 
