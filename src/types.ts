@@ -91,7 +91,7 @@ export interface Config {
   d1AccountId?: string;
   d1DatabaseId?: string;
   d1ApiToken?: string;
-  botLocale?: string;
+  botLocale: string;
   botTranslationsBundle: BotTranslationsBundle;
 }
 

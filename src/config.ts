@@ -56,12 +56,12 @@ const resolveUserDbProvider = (): UserDbProvider => {
 };
 
 const resolveBotTranslationsBundle = (): BotTranslationsBundle => {
-  const raw = process.env.TELEGRAM_LOCALE?.trim().toLowerCase();
+  const raw = process.env.TELEGRAM_TRANSLATION_BUNDLE?.trim().toLowerCase();
   if (raw === 'bot_fake') {
     return 'bot_fake';
   }
   if (raw && raw !== 'bot') {
-    console.warn(`Unknown TELEGRAM_LOCALE "${raw}", falling back to "bot"`);
+    console.warn(`Unknown TELEGRAM_TRANSLATION_BUNDLE "${raw}", falling back to "bot"`);
   }
   return 'bot';
 };
@@ -96,7 +96,10 @@ export const loadConfig = (): Config => {
   if (!playerBaseUrl) {
     throw new Error('PLAYER_BASE_URL is required');
   }
-  const botLocale = process.env.TELEGRAM_BOT_LOCALE?.toLowerCase();
+  const botLocale = process.env.TELEGRAM_DEFAULT_BOT_LOCALE?.trim().toLowerCase();
+  if (!botLocale) {
+    throw new Error('TELEGRAM_DEFAULT_BOT_LOCALE is required');
+  }
   const botTranslationsBundle = resolveBotTranslationsBundle();
   const userDbProvider = resolveUserDbProvider();
   const d1AccountId = process.env.CLOUDFLARE_ACCOUNT_ID;
