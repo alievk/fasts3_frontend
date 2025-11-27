@@ -1,4 +1,5 @@
 import { ChatNotificationTarget, ChatRecord, ChatRegistry, OwnedJob, StoredJob } from './types.js';
+import { D1BaseClient } from './d1BaseClient.js';
 
 type UserRow = {
   telegram_id: string;
@@ -16,20 +17,6 @@ type JobRow = {
   updated_at: string;
 };
 
-type D1QueryResult = {
-  success?: boolean;
-  error?: string;
-  results?: Array<Record<string, unknown>>;
-};
-
-type D1ResponseError = { message?: string };
-
-type D1Response = {
-  success: boolean;
-  errors?: D1ResponseError[];
-  result?: D1QueryResult[];
-};
-
 const serializeJob = (job: OwnedJob): string => JSON.stringify(job);
 const deserializeJob = (payload: string): OwnedJob => JSON.parse(payload) as OwnedJob;
 
@@ -40,18 +27,17 @@ const toChatRecord = (row: UserRow): ChatRecord => ({
   locale: row.locale ?? null
 });
 
-export class D1ChatRegistry implements ChatRegistry {
-  private readonly endpoint: string;
+export class D1ChatRegistry extends D1BaseClient implements ChatRegistry {
   private readonly ready: Promise<void>;
 
   constructor(
-    private readonly accountId: string,
-    private readonly databaseId: string,
-    private readonly apiToken: string,
-    private readonly fetchImpl: typeof fetch = fetch,
+    accountId: string,
+    databaseId: string,
+    apiToken: string,
+    fetchImpl: typeof fetch = fetch,
     baseUrl = 'https://api.cloudflare.com/client/v4'
   ) {
-    this.endpoint = `${baseUrl.replace(/\/$/, '')}/accounts/${accountId}/d1/database/${databaseId}/query`;
+    super(accountId, databaseId, apiToken, fetchImpl, baseUrl);
     this.ready = this.initSchema();
   }
 
@@ -194,70 +180,5 @@ export class D1ChatRegistry implements ChatRegistry {
   private async getUserRow(telegramId: string): Promise<UserRow | undefined> {
     const rows = await this.query<UserRow>('SELECT * FROM users WHERE telegram_id = ?', [telegramId]);
     return rows[0];
-  }
-
-  private async query<T extends Record<string, unknown>>(sql: string, params: unknown[] = []): Promise<T[]> {
-    const result = await this.execute(sql, params);
-    return (result.results ?? []) as T[];
-  }
-
-  private async execute(sql: string, params: unknown[] = []): Promise<D1QueryResult> {
-    const response = await this.fetchImpl(this.endpoint, {
-      method: 'POST',
-      headers: this.buildHeaders(),
-      body: JSON.stringify({ sql, params })
-    });
-    const text = await response.text();
-    if (!response.ok) {
-      const detail = text || response.statusText;
-      throw new Error(`D1 request failed: ${detail}`);
-    }
-
-    let payload: D1Response;
-    try {
-      payload = text ? (JSON.parse(text) as D1Response) : { success: false };
-    } catch {
-      throw new Error('Failed to parse D1 response');
-    }
-
-    const error = this.extractError(payload);
-    if (error) {
-      throw new Error(error);
-    }
-    const first = payload.result?.[0];
-    return first ?? { results: [] };
-  }
-
-  private buildHeaders(): Record<string, string> {
-    return {
-      Authorization: `Bearer ${this.apiToken}`,
-      'Content-Type': 'application/json',
-      Accept: 'application/json'
-    };
-  }
-
-  private extractError(payload: D1Response): string | undefined {
-    if (!payload.success) {
-      return payload.errors?.[0]?.message ?? 'D1 query failed';
-    }
-    const first = payload.result?.[0];
-    if (first?.error) {
-      return first.error;
-    }
-    if (first?.success === false) {
-      return 'D1 query failed';
-    }
-    return undefined;
-  }
-
-  private async ensureSubscriptionColumn(): Promise<void> {
-    try {
-      await this.execute('ALTER TABLE users ADD COLUMN subscription_expires_at TEXT');
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (!/duplicate column name/i.test(message)) {
-        throw error;
-      }
-    }
   }
 }
