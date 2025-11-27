@@ -52,6 +52,17 @@ export class MemoryChatRegistry implements ChatRegistry {
     this.jobs.delete(jobId);
   }
 
+  async deleteUser(telegramId: string): Promise<boolean> {
+    if (!this.chats.has(telegramId)) return false;
+    for (const [jobId, job] of this.jobs) {
+      if (job.telegramId === telegramId) this.jobs.delete(jobId);
+    }
+    this.downloads = this.downloads.filter((d) => d.telegramId !== telegramId);
+    this.quotas.delete(telegramId);
+    this.chats.delete(telegramId);
+    return true;
+  }
+
   async getNotificationTargets(jobId: string): Promise<ChatNotificationTarget[]> {
     const job = this.jobs.get(jobId);
     if (!job) {

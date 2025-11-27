@@ -101,6 +101,16 @@ export class D1ChatRegistry extends D1BaseClient implements ChatRegistry {
     await this.execute('DELETE FROM jobs WHERE job_id = ?', [jobId]);
   }
 
+  async deleteUser(telegramId: string): Promise<boolean> {
+    await this.ready;
+    const row = await this.getUserRow(telegramId);
+    if (!row) return false;
+    await this.execute('DELETE FROM download_history WHERE telegram_id = ?', [telegramId]);
+    await this.execute('DELETE FROM jobs WHERE telegram_id = ?', [telegramId]);
+    await this.execute('DELETE FROM users WHERE telegram_id = ?', [telegramId]);
+    return true;
+  }
+
   async getNotificationTargets(jobId: string): Promise<ChatNotificationTarget[]> {
     await this.ready;
     const rows = await this.query<UserRow>(

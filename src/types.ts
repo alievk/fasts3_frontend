@@ -139,6 +139,7 @@ export interface ChatRegistry {
   bindJobToChat(job: StoredJob, telegramId: string): Promise<OwnedJob>;
   updateJob(job: OwnedJob): Promise<void>;
   deleteJob(jobId: string): Promise<void>;
+  deleteUser(telegramId: string): Promise<boolean>;
   getNotificationTargets(jobId: string): Promise<ChatNotificationTarget[]>;
   getChatLocale(telegramId: string): Promise<string | null>;
   setChatLocale(telegramId: string, locale: string | null): Promise<void>;

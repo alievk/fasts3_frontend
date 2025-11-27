@@ -239,4 +239,13 @@ export class D1PaymentStore extends D1BaseClient {
       [telegramId, used ? 1 : 0, timestamp, timestamp]
     );
   }
+
+  async deleteUser(telegramId: string): Promise<boolean> {
+    await this.ready;
+    const rows = await this.query<{ telegram_id: string }>('SELECT telegram_id FROM users WHERE telegram_id = ?', [telegramId]);
+    if (!rows[0]) return false;
+    await this.execute('DELETE FROM orders WHERE user_id = ?', [telegramId]);
+    await this.execute('DELETE FROM users WHERE telegram_id = ?', [telegramId]);
+    return true;
+  }
 }
