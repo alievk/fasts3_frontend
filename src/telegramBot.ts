@@ -2,7 +2,7 @@ import { Agent as HttpsAgent } from 'node:https';
 import { Telegraf, Markup } from 'telegraf';
 import type { Context } from 'telegraf';
 import { createApiClient } from './apiClient.js';
-import { DownloadService } from './downloadService.js';
+import { DownloadService, QuotaExceededError, QUOTA_WINDOW_DAYS } from './downloadService.js';
 import { Poller } from './poller.js';
 import type {
   ApiClient,
@@ -244,6 +244,7 @@ const isSubscriptionActive = async (telegramId: string): Promise<boolean> => {
 const getBotCommands = (locale: string) => [
   { command: 'search', description: translate('commands.searchDescription', locale) },
   { command: 'jobs', description: translate('commands.jobsDescription', locale) },
+  { command: 'limit', description: translate('commands.limitDescription', locale) },
   { command: 'subscription', description: translate('commands.subscriptionDescription', locale) },
   { command: 'help', description: translate('commands.helpDescription', locale) },
   { command: 'lang', description: translate('commands.langDescription', locale) }
@@ -943,6 +944,26 @@ export const createTelegramBot = (
     await ctx.reply(text, withDisabledPreview({ ...keyboard }));
   });
 
+  bot.command('limit', async (ctx) => {
+    const chatId = getPrivateChatId(ctx);
+    if (chatId === undefined) {
+      return;
+    }
+    const locale = getChatLocale(chatId);
+    const telegramId = await ensureTelegramChat(chatId);
+    const quotaGb = await chatRegistry.getUserQuota(telegramId);
+    const usageBytes = await chatRegistry.getUsageBytes(telegramId, QUOTA_WINDOW_DAYS);
+    const usageGb = (usageBytes / (1024 ** 3)).toFixed(1);
+    const quotaDisplay = quotaGb !== null ? `${quotaGb}` : translate('limit.unlimited', locale);
+    const lines = [translate('limit.message', locale, { used: usageGb, quota: quotaDisplay })];
+    const oldest = await chatRegistry.getOldestDownloadDate(telegramId, QUOTA_WINDOW_DAYS);
+    if (oldest) {
+      const refreshInDays = Math.max(1, Math.ceil(QUOTA_WINDOW_DAYS - (Date.now() - oldest.getTime()) / (24 * 60 * 60 * 1000)));
+      lines.push(translate('limit.refreshIn', locale, { days: refreshInDays }));
+    }
+    await ctx.reply(lines.join('\n'), withDisabledPreview());
+  });
+
   bot.command('how_download_phone', async (ctx) => {
     const chatId = getPrivateChatId(ctx);
     if (chatId === undefined) {
@@ -1250,6 +1271,13 @@ export const createTelegramBot = (
         withDisabledPreview({ parse_mode: 'HTML' as const })
       );
     } catch (error) {
+      if (error instanceof QuotaExceededError) {
+        await ctx.reply(
+          translate('quota.exceeded', locale, { maxGb: error.maxGb, retryInDays: error.retryInDays }),
+          withDisabledPreview()
+        );
+        return;
+      }
       const message = error instanceof Error ? error.message : String(error);
       await ctx.reply(translate('downloads.startFailed', locale, { message }), withDisabledPreview());
     }

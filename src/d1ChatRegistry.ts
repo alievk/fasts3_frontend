@@ -8,6 +8,7 @@ type UserRow = {
   locale: string | null;
   subscription_expires_at?: string | null;
   demo_used?: number | null;
+  weekly_quota_gb?: number | null;
 };
 
 type JobRow = {
@@ -30,15 +31,18 @@ const toChatRecord = (row: UserRow): ChatRecord => ({
 
 export class D1ChatRegistry extends D1BaseClient implements ChatRegistry {
   private readonly ready: Promise<void>;
+  private readonly defaultWeeklyQuotaGb: number | undefined;
 
   constructor(
     accountId: string,
     databaseId: string,
     apiToken: string,
+    defaultWeeklyQuotaGb?: number,
     fetchImpl: typeof fetch = fetch,
     baseUrl = 'https://api.cloudflare.com/client/v4'
   ) {
     super(accountId, databaseId, apiToken, fetchImpl, baseUrl);
+    this.defaultWeeklyQuotaGb = defaultWeeklyQuotaGb;
     this.ready = this.initSchema();
   }
 
@@ -47,12 +51,12 @@ export class D1ChatRegistry extends D1BaseClient implements ChatRegistry {
     const timestamp = new Date().toISOString();
     await this.execute(
       `
-      INSERT INTO users (telegram_id, locale, created_at, updated_at)
-      VALUES (?, ?, ?, ?)
+      INSERT INTO users (telegram_id, locale, weekly_quota_gb, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?)
       ON CONFLICT(telegram_id) DO UPDATE SET
         updated_at = excluded.updated_at
     `.trim(),
-      [telegramId, null, timestamp, timestamp]
+      [telegramId, null, this.defaultWeeklyQuotaGb ?? null, timestamp, timestamp]
     );
     const row = await this.getUserRow(telegramId);
     if (!row) {
@@ -134,6 +138,54 @@ export class D1ChatRegistry extends D1BaseClient implements ChatRegistry {
     );
   }
 
+  async recordDownload(telegramId: string, jobId: string, hash: string, sizeBytes: number): Promise<void> {
+    await this.ready;
+    const timestamp = new Date().toISOString();
+    await this.execute(
+      'INSERT INTO download_history (telegram_id, job_id, hash, size_bytes, completed_at) VALUES (?, ?, ?, ?, ?)',
+      [telegramId, jobId, hash, sizeBytes, timestamp]
+    );
+  }
+
+  async getUsageBytes(telegramId: string, days: number): Promise<number> {
+    await this.ready;
+    const rows = await this.query<{ total: number | null }>(
+      `SELECT SUM(max_size) as total FROM (
+        SELECT hash, MAX(size_bytes) as max_size 
+        FROM download_history 
+        WHERE telegram_id = ? AND completed_at > datetime('now', '-' || ? || ' days')
+        GROUP BY hash
+      )`,
+      [telegramId, days]
+    );
+    return rows[0]?.total ?? 0;
+  }
+
+  async getOldestDownloadDate(telegramId: string, days: number): Promise<Date | null> {
+    await this.ready;
+    const rows = await this.query<{ oldest: string | null }>(
+      `SELECT MIN(completed_at) as oldest FROM download_history WHERE telegram_id = ? AND completed_at > datetime('now', '-' || ? || ' days')`,
+      [telegramId, days]
+    );
+    const oldest = rows[0]?.oldest;
+    return oldest ? new Date(oldest) : null;
+  }
+
+  async getUserQuota(telegramId: string): Promise<number | null> {
+    await this.ready;
+    const rows = await this.query<{ weekly_quota_gb: number | null }>('SELECT weekly_quota_gb FROM users WHERE telegram_id = ?', [telegramId]);
+    return rows[0]?.weekly_quota_gb ?? null;
+  }
+
+  async setUserQuota(telegramId: string, quotaGb: number | null): Promise<void> {
+    await this.ready;
+    const timestamp = new Date().toISOString();
+    await this.execute(
+      'UPDATE users SET weekly_quota_gb = ?, updated_at = ? WHERE telegram_id = ?',
+      [quotaGb, timestamp, telegramId]
+    );
+  }
+
   private async initSchema(): Promise<void> {
     const statements = [
       `
@@ -156,13 +208,34 @@ export class D1ChatRegistry extends D1BaseClient implements ChatRegistry {
         FOREIGN KEY (telegram_id) REFERENCES users(telegram_id) ON DELETE CASCADE
       )
     `.trim(),
-      'CREATE INDEX IF NOT EXISTS jobs_telegram_id_idx ON jobs(telegram_id)'
+      'CREATE INDEX IF NOT EXISTS jobs_telegram_id_idx ON jobs(telegram_id)',
+      `
+      CREATE TABLE IF NOT EXISTS download_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        telegram_id TEXT NOT NULL,
+        job_id TEXT NOT NULL,
+        hash TEXT NOT NULL,
+        size_bytes INTEGER NOT NULL,
+        completed_at TEXT NOT NULL,
+        FOREIGN KEY (telegram_id) REFERENCES users(telegram_id) ON DELETE CASCADE
+      )
+    `.trim(),
+      'CREATE INDEX IF NOT EXISTS download_history_user_date_idx ON download_history(telegram_id, completed_at)'
     ];
     for (const sql of statements) {
       await this.execute(sql);
     }
     await this.ensureSubscriptionColumn();
     await this.ensureDemoUsedColumn();
+    await this.ensureWeeklyQuotaColumn();
+  }
+
+  private async ensureWeeklyQuotaColumn(): Promise<void> {
+    try {
+      await this.execute('ALTER TABLE users ADD COLUMN weekly_quota_gb REAL');
+    } catch {
+      // Column already exists
+    }
   }
 
   private async saveJob(job: OwnedJob): Promise<void> {

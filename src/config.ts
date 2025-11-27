@@ -115,6 +115,7 @@ export const loadConfig = (): Config => {
   }
 
   const demoPlanId = parsePositiveInt(process.env.DEMO_PLAN_ID);
+  const weeklyQuotaGb = parsePositiveFloat(process.env.WEEKLY_QUOTA_GB);
 
   return {
     apiBaseUrl,
@@ -136,6 +137,7 @@ export const loadConfig = (): Config => {
     botLocale,
     botTranslationsBundle,
     timezone,
-    demoPlanId
+    demoPlanId,
+    weeklyQuotaGb
   };
 };

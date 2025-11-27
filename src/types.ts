@@ -96,6 +96,7 @@ export interface Config {
   botLocale: string;
   botTranslationsBundle: BotTranslationsBundle;
   demoPlanId?: number;
+  weeklyQuotaGb?: number;
 }
 
 export type UserDbProvider = 'd1';
@@ -141,6 +142,11 @@ export interface ChatRegistry {
   getNotificationTargets(jobId: string): Promise<ChatNotificationTarget[]>;
   getChatLocale(telegramId: string): Promise<string | null>;
   setChatLocale(telegramId: string, locale: string | null): Promise<void>;
+  recordDownload(telegramId: string, jobId: string, hash: string, sizeBytes: number): Promise<void>;
+  getUsageBytes(telegramId: string, days: number): Promise<number>;
+  getOldestDownloadDate(telegramId: string, days: number): Promise<Date | null>;
+  getUserQuota(telegramId: string): Promise<number | null>;
+  setUserQuota(telegramId: string, quotaGb: number | null): Promise<void>;
 }
 
 export type PaymentStatus = 'pending' | 'paid' | 'canceled';

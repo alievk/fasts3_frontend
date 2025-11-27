@@ -12,6 +12,16 @@ import {
 } from './types.js';
 import { extractHashFromMagnet, normalizeHash } from './hashUtils.js';
 
+export class QuotaExceededError extends Error {
+  constructor(
+    public readonly maxGb: number,
+    public readonly retryInDays: number
+  ) {
+    super(`Quota exceeded: ${maxGb} GB limit, retry in ${retryInDays} days`);
+    this.name = 'QuotaExceededError';
+  }
+}
+
 type DownloadServiceEvents = {
   jobUpdated: (job: OwnedJob) => void;
   jobRemoved: (job: OwnedJob) => void;
@@ -83,9 +93,12 @@ const newStoredJob = (params: NewStoredJobParams): StoredJob => ({
   s3ObjectKey: params.s3ObjectKey ?? null
 });
 
+export const QUOTA_WINDOW_DAYS = 7;
+
 export class DownloadService extends EventEmitter {
   private jobs = new Map<string, OwnedJob>();
   private initialized = false;
+  private recordedCompletions = new Set<string>();
 
   constructor(
     private readonly apiClient: ApiClient,
@@ -193,6 +206,20 @@ export class DownloadService extends EventEmitter {
         }
       }
 
+      const userQuotaGb = await this.chatRegistry.getUserQuota(owner);
+      if (userQuotaGb !== null) {
+        const usageBytes = await this.chatRegistry.getUsageBytes(owner, QUOTA_WINDOW_DAYS);
+        const newSizeBytes = result.sizeBytes ?? 0;
+        const projectedGb = (usageBytes + newSizeBytes) / (1024 ** 3);
+        if (projectedGb > userQuotaGb) {
+          const oldest = await this.chatRegistry.getOldestDownloadDate(owner, QUOTA_WINDOW_DAYS);
+          const retryInDays = oldest
+            ? Math.max(1, Math.ceil(QUOTA_WINDOW_DAYS - (Date.now() - oldest.getTime()) / (24 * 60 * 60 * 1000)))
+            : 1;
+          throw new QuotaExceededError(userQuotaGb, retryInDays);
+        }
+      }
+
       const response = await this.apiClient.createJob(result.magnet, result.title);
       const stored = newStoredJob({
         jobId: response.jobId,
@@ -215,7 +242,9 @@ export class DownloadService extends EventEmitter {
       }
       return owned;
     } catch (error) {
-      this.emit('error', error instanceof Error ? error : new Error(String(error)));
+      if (!(error instanceof QuotaExceededError)) {
+        this.emit('error', error instanceof Error ? error : new Error(String(error)));
+      }
       throw error;
     }
   }
@@ -242,11 +271,19 @@ export class DownloadService extends EventEmitter {
       if (!existing) {
         return;
       }
-      let updated = mapDetailToStored(detail, existing ?? undefined);
-
+      const updated = mapDetailToStored(detail, existing ?? undefined);
       const owned: OwnedJob = { ...updated, telegramId: existing.telegramId };
       this.jobs.set(jobId, owned);
       await this.chatRegistry.updateJob(owned);
+
+      if (detail.status === 'completed' && !this.recordedCompletions.has(jobId)) {
+        const sizeBytes = detail.sizeBytes ?? owned.sizeBytes;
+        if (hasKnownSize(sizeBytes)) {
+          await this.chatRegistry.recordDownload(owned.telegramId, jobId, owned.hash, sizeBytes);
+          this.recordedCompletions.add(jobId);
+        }
+      }
+
       this.emit('jobUpdated', owned);
     } catch (error) {
       this.emit('error', error instanceof Error ? error : new Error(String(error)));
