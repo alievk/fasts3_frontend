@@ -114,6 +114,8 @@ export const loadConfig = (): Config => {
     }
   }
 
+  const demoPlanId = parsePositiveInt(process.env.DEMO_PLAN_ID);
+
   return {
     apiBaseUrl,
     apiToken: process.env.API_TOKEN,
@@ -133,6 +135,7 @@ export const loadConfig = (): Config => {
     d1ApiToken,
     botLocale,
     botTranslationsBundle,
-    timezone
+    timezone,
+    demoPlanId
   };
 };

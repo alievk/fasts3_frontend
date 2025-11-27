@@ -8,6 +8,7 @@ type FakeUserRow = {
   telegram_id: string;
   locale: string | null;
   subscription_expires_at: string | null;
+  demo_used: number;
   created_at: string;
   updated_at: string;
 };
@@ -75,6 +76,10 @@ const buildFetchStub = (plan: FakePlanRow) => {
     }
 
     if (normalized.startsWith('alter table users add column subscription_expires_at')) {
+      return response([]);
+    }
+
+    if (normalized.startsWith('alter table users add column demo_used')) {
       return response([]);
     }
 
@@ -147,6 +152,7 @@ const buildFetchStub = (plan: FakePlanRow) => {
         telegram_id: telegramId,
         locale: existing?.locale ?? null,
         subscription_expires_at: subscriptionExpiresAt ?? null,
+        demo_used: existing?.demo_used ?? 0,
         created_at: existing?.created_at ?? createdAt,
         updated_at: updatedAt
       };

@@ -122,6 +122,10 @@ const createD1FetchStub = () => {
       return response([]);
     }
 
+    if (normalized.startsWith('alter table users add column demo_used')) {
+      return response([]);
+    }
+
     if (normalized.startsWith('insert into users')) {
       const [telegramId, locale, createdAt, updatedAt] = params as [string, string | null, string, string];
       const existing = users.get(telegramId);

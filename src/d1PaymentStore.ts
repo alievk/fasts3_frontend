@@ -25,6 +25,10 @@ type SubscriptionRow = {
   subscription_expires_at: string | null;
 };
 
+type DemoUsedRow = {
+  demo_used: number | null;
+};
+
 const toPaymentPlan = (row: PlanRow): PaymentPlan => ({
   id: row.id,
   name: row.name,
@@ -174,6 +178,7 @@ export class D1PaymentStore extends D1BaseClient {
         telegram_id TEXT PRIMARY KEY,
         locale TEXT,
         subscription_expires_at TEXT,
+        demo_used INTEGER DEFAULT 0,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       )
@@ -209,5 +214,29 @@ export class D1PaymentStore extends D1BaseClient {
       await this.execute(sql);
     }
     await this.ensureSubscriptionColumn();
+    await this.ensureDemoUsedColumn();
+  }
+
+  async getDemoUsed(telegramId: string): Promise<boolean> {
+    await this.ready;
+    const rows = await this.query<DemoUsedRow>(
+      'SELECT demo_used FROM users WHERE telegram_id = ?',
+      [telegramId]
+    );
+    return (rows[0]?.demo_used ?? 0) !== 0;
+  }
+
+  async setDemoUsed(telegramId: string, used: boolean, timestamp: string): Promise<void> {
+    await this.ready;
+    await this.execute(
+      `
+      INSERT INTO users (telegram_id, demo_used, created_at, updated_at)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(telegram_id) DO UPDATE SET
+        demo_used = excluded.demo_used,
+        updated_at = excluded.updated_at
+    `.trim(),
+      [telegramId, used ? 1 : 0, timestamp, timestamp]
+    );
   }
 }

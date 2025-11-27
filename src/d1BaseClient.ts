@@ -89,5 +89,16 @@ export abstract class D1BaseClient {
       }
     }
   }
+
+  protected async ensureDemoUsedColumn(): Promise<void> {
+    try {
+      await this.execute('ALTER TABLE users ADD COLUMN demo_used INTEGER DEFAULT 0');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!/duplicate column name/i.test(message)) {
+        throw error;
+      }
+    }
+  }
 }
 

@@ -95,6 +95,7 @@ export interface Config {
   yookassaSecretKey?: string;
   botLocale: string;
   botTranslationsBundle: BotTranslationsBundle;
+  demoPlanId?: number;
 }
 
 export type UserDbProvider = 'd1';

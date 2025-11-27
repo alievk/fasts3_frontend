@@ -66,6 +66,9 @@ type PaymentStore = {
   }) => Promise<PaymentOrder>;
   setOrderExternalId: (orderId: number, externalId: string) => Promise<void>;
   getSubscriptionExpiresAt: (telegramId: string) => Promise<string | null>;
+  setSubscriptionExpiresAt: (telegramId: string, expiresAt: string | null, timestamp: string) => Promise<void>;
+  getDemoUsed: (telegramId: string) => Promise<boolean>;
+  setDemoUsed: (telegramId: string, used: boolean, timestamp: string) => Promise<void>;
 };
 
 let botTranslations: BotTranslations = TRANSLATION_BUNDLES.bot;
@@ -151,6 +154,8 @@ const buildStartContent = (locale: string) => {
 };
 
 const SUBSCRIPTION_PAYLOAD_PREFIX = 'subscription:';
+const DEMO_ACTIVATE_PAYLOAD = 'demo:activate';
+
 const formatPlanPrice = (price: number, locale: string): string => {
   try {
     return new Intl.NumberFormat(locale === 'ru' ? 'ru-RU' : 'en-US', {
@@ -186,13 +191,21 @@ const buildPaymentReturnUrl = (): string => {
 
 const formatOrderDescription = (orderId: number): string => `Order #${orderId}`;
 
-const buildSubscriptionKeyboard = (plans: PaymentPlan[], locale: string) =>
-  Markup.inlineKeyboard(
-    plans.map((plan) =>
-      Markup.button.callback(formatPlanLabel(plan, locale), `${SUBSCRIPTION_PAYLOAD_PREFIX}${plan.id}`)
-    ),
-    { columns: 1 }
+const buildSubscriptionKeyboard = (plans: PaymentPlan[], locale: string, demoPlan?: PaymentPlan) => {
+  const buttons = plans.map((plan) =>
+    Markup.button.callback(formatPlanLabel(plan, locale), `${SUBSCRIPTION_PAYLOAD_PREFIX}${plan.id}`)
   );
+  if (demoPlan) {
+    const demoLabel = translate('subscription.demoButton', locale, { days: demoPlan.durationDays });
+    buttons.unshift(Markup.button.callback(demoLabel, DEMO_ACTIVATE_PAYLOAD));
+  }
+  return Markup.inlineKeyboard(buttons, { columns: 1 });
+};
+
+const buildDemoOfferKeyboard = (demoPlan: PaymentPlan, locale: string) => {
+  const demoLabel = translate('subscription.demoButton', locale, { days: demoPlan.durationDays });
+  return Markup.inlineKeyboard([Markup.button.callback(demoLabel, DEMO_ACTIVATE_PAYLOAD)], { columns: 1 });
+};
 
 const sendStartMessage = async (
   chatId: number,
@@ -918,7 +931,14 @@ export const createTelegramBot = (
       await ctx.reply(translateForChat(chatId, 'subscription.noPlans'), withDisabledPreview());
       return;
     }
-    const keyboard = buildSubscriptionKeyboard(plans, locale);
+    let demoPlan: PaymentPlan | undefined;
+    if (!isActive && config.demoPlanId) {
+      const demoUsed = await paymentStore.getDemoUsed(telegramId);
+      if (!demoUsed) {
+        demoPlan = await paymentStore.getPlan(config.demoPlanId);
+      }
+    }
+    const keyboard = buildSubscriptionKeyboard(plans, locale, demoPlan);
     const text = `${statusLine}\n\n${translateForChat(chatId, 'subscription.message')}`;
     await ctx.reply(text, withDisabledPreview({ ...keyboard }));
   });
@@ -1080,6 +1100,48 @@ export const createTelegramBot = (
     }
   });
 
+  bot.action(DEMO_ACTIVATE_PAYLOAD, async (ctx) => {
+    const chatId = getPrivateChatId(ctx);
+    if (chatId === undefined) {
+      await safeAnswerCallback(ctx);
+      return;
+    }
+    await safeAnswerCallback(ctx);
+    const locale = getChatLocale(chatId);
+    const telegramId = await ensureTelegramChat(chatId);
+
+    if (!config.demoPlanId) {
+      await ctx.reply(translate('subscription.noPlans', locale), withDisabledPreview());
+      return;
+    }
+    const demoUsed = await paymentStore.getDemoUsed(telegramId);
+    if (demoUsed) {
+      await ctx.reply(translate('subscription.noPlans', locale), withDisabledPreview());
+      return;
+    }
+    const demoPlan = await paymentStore.getPlan(config.demoPlanId);
+    if (!demoPlan) {
+      await ctx.reply(translate('subscription.noPlans', locale), withDisabledPreview());
+      return;
+    }
+
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + demoPlan.durationDays * 24 * 60 * 60 * 1000);
+    const timestamp = now.toISOString();
+    await paymentStore.setSubscriptionExpiresAt(telegramId, expiresAt.toISOString(), timestamp);
+    await paymentStore.setDemoUsed(telegramId, true, timestamp);
+
+    const dateLocale = locale === 'ru' ? 'ru-RU' : 'en-US';
+    const formatted = expiresAt.toLocaleDateString(dateLocale, {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+      timeZone: config.timezone
+    });
+    console.log(`[demo] activated for user=${telegramId} expires=${expiresAt.toISOString()}`);
+    await ctx.reply(translate('subscription.demoActivated', locale, { date: formatted }), withDisabledPreview());
+  });
+
   bot.action(/^page:(\d+)$/, async (ctx) => {
     const match = ctx.match as RegExpExecArray | undefined;
     const rawPage = match?.[1];
@@ -1144,7 +1206,19 @@ export const createTelegramBot = (
     }
     const telegramId = await ensureTelegramChat(chatId);
     if (!(await isSubscriptionActive(telegramId))) {
-      await ctx.reply(translate('subscription.expired', locale), withDisabledPreview());
+      let demoPlan: PaymentPlan | undefined;
+      if (config.demoPlanId) {
+        const demoUsed = await paymentStore.getDemoUsed(telegramId);
+        if (!demoUsed) {
+          demoPlan = await paymentStore.getPlan(config.demoPlanId);
+        }
+      }
+      if (demoPlan) {
+        const keyboard = buildDemoOfferKeyboard(demoPlan, locale);
+        await ctx.reply(translate('subscription.demoOffer', locale), withDisabledPreview({ ...keyboard }));
+      } else {
+        await ctx.reply(translate('subscription.expired', locale), withDisabledPreview());
+      }
       return;
     }
     try {

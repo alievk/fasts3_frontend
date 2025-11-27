@@ -7,6 +7,7 @@ type UserRow = {
   updated_at: string;
   locale: string | null;
   subscription_expires_at?: string | null;
+  demo_used?: number | null;
 };
 
 type JobRow = {
@@ -140,6 +141,7 @@ export class D1ChatRegistry extends D1BaseClient implements ChatRegistry {
         telegram_id TEXT PRIMARY KEY,
         locale TEXT,
         subscription_expires_at TEXT,
+        demo_used INTEGER DEFAULT 0,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       )
@@ -160,6 +162,7 @@ export class D1ChatRegistry extends D1BaseClient implements ChatRegistry {
       await this.execute(sql);
     }
     await this.ensureSubscriptionColumn();
+    await this.ensureDemoUsedColumn();
   }
 
   private async saveJob(job: OwnedJob): Promise<void> {
