@@ -65,6 +65,7 @@ type PaymentStore = {
     status?: PaymentStatus;
   }) => Promise<PaymentOrder>;
   setOrderExternalId: (orderId: number, externalId: string) => Promise<void>;
+  getSubscriptionExpiresAt: (telegramId: string) => Promise<string | null>;
 };
 
 let botTranslations: BotTranslations = TRANSLATION_BUNDLES.bot;
@@ -219,6 +220,12 @@ const getBotUsername = (): string => {
     throw new Error('Bot username is not initialized');
   }
   return botUsername;
+};
+
+const isSubscriptionActive = async (telegramId: string): Promise<boolean> => {
+  const expiresAt = await paymentStore.getSubscriptionExpiresAt(telegramId);
+  if (!expiresAt) return false;
+  return new Date(expiresAt) > new Date();
 };
 
 const getBotCommands = (locale: string) => [
@@ -885,6 +892,22 @@ export const createTelegramBot = (
       return;
     }
     const locale = getChatLocale(chatId);
+    const telegramId = await ensureTelegramChat(chatId);
+    const expiresAt = await paymentStore.getSubscriptionExpiresAt(telegramId);
+    const isActive = expiresAt && new Date(expiresAt) > new Date();
+    let statusLine: string;
+    if (isActive) {
+      const dateLocale = locale === 'ru' ? 'ru-RU' : 'en-US';
+      const formatted = new Date(expiresAt).toLocaleDateString(dateLocale, {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+        timeZone: config.timezone
+      });
+      statusLine = translate('subscription.expiresAt', locale, { date: formatted });
+    } else {
+      statusLine = translate('subscription.noActive', locale);
+    }
     let plans: PaymentPlan[] = [];
     try {
       plans = await paymentStore.listVisiblePlans();
@@ -896,7 +919,7 @@ export const createTelegramBot = (
       return;
     }
     const keyboard = buildSubscriptionKeyboard(plans, locale);
-    const text = translateForChat(chatId, 'subscription.message');
+    const text = `${statusLine}\n\n${translateForChat(chatId, 'subscription.message')}`;
     await ctx.reply(text, withDisabledPreview({ ...keyboard }));
   });
 
@@ -1120,6 +1143,10 @@ export const createTelegramBot = (
       return;
     }
     const telegramId = await ensureTelegramChat(chatId);
+    if (!(await isSubscriptionActive(telegramId))) {
+      await ctx.reply(translate('subscription.expired', locale), withDisabledPreview());
+      return;
+    }
     try {
       const existingJobs = downloadService.getJobsForChat(telegramId);
       const knownJobIds = new Set(existingJobs.map((job) => job.jobId));
