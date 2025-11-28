@@ -140,6 +140,12 @@ const buildFetchStub = (plan: FakePlanRow) => {
       return response(row ? [{ subscription_expires_at: row.subscription_expires_at ?? null }] : []);
     }
 
+    if (normalized.startsWith('select locale from users')) {
+      const [telegramId] = params as [string];
+      const row = users.get(telegramId);
+      return response(row ? [{ locale: row.locale ?? null }] : []);
+    }
+
     if (normalized.startsWith('insert into users')) {
       const [telegramId, subscriptionExpiresAt, createdAt, updatedAt] = params as [
         string,
@@ -217,7 +223,7 @@ test('marks order paid and extends subscription', async () => {
     assert.ok(diffMs > expectedMs - 60000 && diffMs < expectedMs + 60000);
 
     const sent = stub.telegramMessages[0] as { text?: string } | undefined;
-    assert.ok(sent?.text?.includes('Payment received'));
+    assert.ok(sent?.text?.includes('Оплата получена'));
   } finally {
     (global as any).fetch = originalFetch;
   }
@@ -239,7 +245,7 @@ test('rolls back subscription for test endpoint', async () => {
   assert.notEqual(subscription, baseDate);
 
   const sent = stub.telegramMessages[0] as { text?: string } | undefined;
-  assert.ok(sent?.text?.startsWith('[test] payment received'));
+  assert.ok(sent?.text?.startsWith('[test] Оплата получена'));
   } finally {
     (global as any).fetch = originalFetch;
   }

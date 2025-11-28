@@ -25,6 +25,10 @@ type SubscriptionRow = {
   subscription_expires_at: string | null;
 };
 
+type LocaleRow = {
+  locale: string | null;
+};
+
 type DemoUsedRow = {
   demo_used: number | null;
 };
@@ -215,6 +219,12 @@ export class D1PaymentStore extends D1BaseClient {
     }
     await this.ensureSubscriptionColumn();
     await this.ensureDemoUsedColumn();
+  }
+
+  async getChatLocale(telegramId: string): Promise<string | null> {
+    await this.ready;
+    const rows = await this.query<LocaleRow>('SELECT locale FROM users WHERE telegram_id = ?', [telegramId]);
+    return rows[0]?.locale ?? null;
   }
 
   async getDemoUsed(telegramId: string): Promise<boolean> {

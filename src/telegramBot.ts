@@ -19,8 +19,16 @@ import { JobStatus, OwnedJob, SearchResult, SearchResultDetail } from './types.j
 import { normalizeHash } from './hashUtils.js';
 import { createSearchPipeline } from './searchPipeline.js';
 import { createChatRegistry } from './chatRegistry.js';
-import botTranslationsData from './locales/bot.json' with { type: 'json' };
 import { D1PaymentStore } from './d1PaymentStore.js';
+import {
+  translate,
+  setTranslations,
+  isSupportedLocale,
+  getAvailableLocales,
+  PRIMARY_LOCALE,
+  type TranslationParams
+} from './translate.js';
+import botTranslationsData from './locales/bot.json' with { type: 'json' };
 import { createPaymentClient } from './paymentClient.js';
 
 type SendMessageExtra = Parameters<Telegraf['telegram']['sendMessage']>[2];
@@ -49,6 +57,7 @@ let config: Config;
 const TRANSLATION_BUNDLES: Record<'bot', BotTranslations> = {
   bot: botTranslationsData as BotTranslations
 };
+let defaultLocale = PRIMARY_LOCALE;
 
 type PaymentStore = {
   listVisiblePlans: () => Promise<PaymentPlan[]>;
@@ -69,29 +78,6 @@ type PaymentStore = {
   setDemoUsed: (telegramId: string, used: boolean, timestamp: string) => Promise<void>;
 };
 
-let botTranslations: BotTranslations = TRANSLATION_BUNDLES.bot;
-type TranslationParams = Record<string, string | number>;
-const PRIMARY_LOCALE = 'ru';
-const isSupportedLocale = (locale?: string): locale is string =>
-  Boolean(locale && Object.prototype.hasOwnProperty.call(botTranslations, locale));
-let defaultLocale = PRIMARY_LOCALE;
-const normalizeTranslationValue = (value: string | string[]): string => (Array.isArray(value) ? value.join('') : value);
-const resolveTemplate = (locale: string, key: string): string | undefined => {
-  const value = botTranslations[locale]?.[key];
-  if (value === undefined) {
-    return undefined;
-  }
-  return normalizeTranslationValue(value);
-};
-const formatTemplate = (template: string, params?: TranslationParams): string =>
-  template.replace(/\{([^}]+)\}/g, (_match, token: string) => {
-    const value = params?.[token.trim()];
-    return value === undefined ? '' : String(value);
-  });
-const translate = (key: string, locale: string, params?: TranslationParams): string => {
-  const template = resolveTemplate(locale, key) ?? resolveTemplate(PRIMARY_LOCALE, key) ?? key;
-  return formatTemplate(template, params);
-};
 const chatLocales = new Map<number, string>();
 const getLocaleFlag = (locale: string): string => {
   if (locale === 'ru') {
@@ -126,7 +112,7 @@ const translateForChat = (chatId: number | undefined, key: string, params?: Tran
 const translateDefault = (key: string, params?: TranslationParams): string => translate(key, defaultLocale, params);
 const getLocaleDisplayName = (locale: string): string => translate('locale.selfName', locale);
 const getOrderedLocales = (): string[] => {
-  const available = Object.keys(botTranslations).filter(isSupportedLocale);
+  const available = getAvailableLocales();
   const preferredOrder = ['ru', 'en'];
   const primary = preferredOrder.filter((locale) => available.includes(locale));
   const extra = available.filter((locale) => !preferredOrder.includes(locale));
@@ -816,7 +802,7 @@ export const createTelegramBot = (
   deps: TelegramBotDependencies = {}
 ): TelegramBotRuntime => {
   config = providedConfig;
-  botTranslations = TRANSLATION_BUNDLES[config.botTranslationsBundle] ?? TRANSLATION_BUNDLES.bot;
+  setTranslations(TRANSLATION_BUNDLES[config.botTranslationsBundle] ?? TRANSLATION_BUNDLES.bot);
   defaultLocale = isSupportedLocale(config.botLocale) ? config.botLocale : PRIMARY_LOCALE;
   searchPageSize = config.searchPageSize;
   apiClient = deps.apiClient ?? createApiClient();
@@ -938,8 +924,8 @@ export const createTelegramBot = (
       }
     }
     const keyboard = buildSubscriptionKeyboard(plans, locale, demoPlan);
-    const text = `${statusLine}\n\n${translateForChat(chatId, 'subscription.message')}`;
-    await ctx.reply(text, withDisabledPreview({ ...keyboard }));
+    const text = `${statusLine}\n\n${translateForChat(chatId, 'subscription.messageHtml')}`;
+    await ctx.reply(text, withDisabledPreview({ parse_mode: 'HTML' as const, ...keyboard }));
   });
 
   bot.command('limit', async (ctx) => {

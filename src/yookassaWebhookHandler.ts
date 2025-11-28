@@ -1,6 +1,7 @@
 import { D1PaymentStore } from './d1PaymentStore.js';
 import type { PaymentOrder } from './types.js';
 import type { WebhookContext, WebhookHandler } from './webhookTypes.js';
+import { translate, resolveLocale } from './translate.js';
 
 type YookassaMetadata = {
   internal_order_id?: unknown;
@@ -69,12 +70,10 @@ const formatExpiresAt = (iso: string, timezone: string): string => {
   }
 };
 
-const buildMessage = (expiresAt: string, timezone: string, isTest: boolean): string => {
+const buildMessage = (expiresAt: string, timezone: string, locale: string, isTest: boolean): string => {
   const formatted = formatExpiresAt(expiresAt, timezone);
-  if (isTest) {
-    return `[test] payment received, your subscription expires at ${formatted}`;
-  }
-  return `Payment received, your subscription expires at ${formatted}`;
+  const text = translate('subscription.paymentReceived', locale, { date: formatted });
+  return isTest ? `[test] ${text}` : text;
 };
 
 const sendTelegramNotification = async (botToken: string, chatId: string, text: string): Promise<void> => {
@@ -128,8 +127,10 @@ export const createYookassaWebhookHandler = (options: {
     await store.markOrderPaid(order.id, paidAt);
     await store.setSubscriptionExpiresAt(order.userId, newExpiresAt, paidAt);
 
+    const locale = resolveLocale(await store.getChatLocale(order.userId));
+
     try {
-      await sendTelegramNotification(botToken, order.userId, buildMessage(newExpiresAt, timezone, isTest));
+      await sendTelegramNotification(botToken, order.userId, buildMessage(newExpiresAt, timezone, locale, isTest));
     } catch (error) {
       console.error('Failed to send payment notification:', error);
     }
