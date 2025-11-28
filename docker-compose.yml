@@ -13,10 +13,17 @@ services:
     profiles: ["prod"]
 
   bot-dev:
-    extends:
-      service: bot
+    image: node:20-alpine
+    working_dir: /app
+    env_file: .env
     environment:
+      TZ: ${TZ:-UTC}
       TELEGRAM_BOT_TOKEN: 8569009509:AAEjzCtTRFu4T8aoLTspuWt-V3KNS6z2Aks
+    volumes:
+      - .:/app
+      - telegram_bot_node_modules:/app/node_modules
+    command: >
+      sh -c "npm install --no-audit --no-fund && npm run bot"
     profiles: ["dev"]
 
   player:
