@@ -81,13 +81,13 @@
     ],
     "help.messageHtml": "{faq}",
     "subscription.messageHtml": [
-      "Оформить подписку, чтобы скачивать новые видео ✅\n\n",
+      "Оформи подписку, чтобы скачивать новые видео ✅\n\n",
       "Когда срок подписки истечёт, ты сможешь скачивать и просматривать ранее загруженные видео.\n\n",
       "Остались вопросы? Пиши @numpy_as_np"
     ],
     "subscription.noPlans": "Тарифы временно недоступны. Попробуй позже.",
     "subscription.payLinkLabel": "Оплатить",
-    "subscription.paymentLinkHtml": "{plan} ({price})\n\n{link}\n\nПосле перехода по ссылке ты будешь перенаправлен(а) на страницу оплаты. После успешной оплаты я отправлю уведомление сюда.",
+    "subscription.paymentLinkHtml": "<b>{plan} ({price})</b>\n\nПосле перехода по ссылке откроется страница оплаты. После успешной оплаты я отправлю уведомление сюда.",
     "subscription.paymentFailed": "Не удалось создать ссылку на оплату. Попробуй позже.",
     "subscription.expired": "Подписка истекла. Продли её с помощью /subscription чтобы начинать новые загрузки.",
     "subscription.expiresAt": "<b>Твоя подписка действует до {date}</b>",
@@ -99,6 +99,9 @@
     "subscription.pay3m": "Оплатить 3 месяца - 300 руб.",
     "subscription.pay6m": "Оплатить 6 месяцев - 600 руб.",
     "subscription.pay1y": "Оплатить 1 год - 1200 руб.",
+    "plans.3months": "3 месяца",
+    "plans.6months": "🔥 6 месяцев",
+    "plans.1year": "1 год",
     "howDownloadPhone.messageHtml": [
       "<b>📱 Как качать видео на iPhone</b>\n",
       "\n",

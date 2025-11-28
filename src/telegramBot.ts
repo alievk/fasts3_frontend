@@ -138,6 +138,7 @@ const buildStartContent = (locale: string) => {
 };
 
 const SUBSCRIPTION_PAYLOAD_PREFIX = 'subscription:';
+const SUBSCRIPTION_START_PREFIX = 'sub_';
 const DEMO_ACTIVATE_PAYLOAD = 'demo:activate';
 
 const formatPlanPrice = (price: number, locale: string): string => {
@@ -154,18 +155,27 @@ const formatPlanPrice = (price: number, locale: string): string => {
 
 const formatPlanLabel = (plan: PaymentPlan, locale: string): string => {
   const price = formatPlanPrice(plan.price, locale);
-  return `${plan.name} — ${price}`;
+  const label = translate(plan.labelKey, locale);
+  if (plan.oldPrice != null) {
+    const discount = Math.ceil(100 * (1 - plan.price / plan.oldPrice));
+    return `${label} — ${price} (-${discount}%)`;
+  }
+  return `${label} — ${price}`;
 };
 
-const formatPaymentLinkMessage = (plan: PaymentPlan, paymentUrl: string, locale: string): string => {
+const formatPaymentLinkMessage = (plan: PaymentPlan, locale: string): string => {
   const price = formatPlanPrice(plan.price, locale);
-  const safeName = escapeHtml(plan.name);
-  const safeUrl = escapeHtml(paymentUrl);
+  const label = translate(plan.labelKey, locale);
+  const safeLabel = escapeHtml(label);
   return translate('subscription.paymentLinkHtml', locale, {
-    plan: safeName,
-    price,
-    link: `<a href="${safeUrl}">${translate('subscription.payLinkLabel', locale)}</a>`
+    plan: safeLabel,
+    price
   });
+};
+
+const buildPaymentKeyboard = (paymentUrl: string, locale: string) => {
+  const label = translate('subscription.payLinkLabel', locale);
+  return Markup.inlineKeyboard([Markup.button.url(label, paymentUrl)]);
 };
 
 const buildPaymentReturnUrl = (): string => {
@@ -832,6 +842,62 @@ export const createTelegramBot = (
     return next();
   });
 
+  const handleSubscriptionPlan = async (
+    chatId: number,
+    planId: number,
+    reply: (text: string, extra?: object) => Promise<unknown>
+  ): Promise<void> => {
+    const locale = getChatLocale(chatId);
+    const telegramId = await ensureTelegramChat(chatId);
+
+    let plan: PaymentPlan | undefined;
+    try {
+      plan = await paymentStore.getPlan(planId);
+    } catch (error) {
+      console.error('Failed to load plan:', error);
+    }
+    if (!plan || !plan.display) {
+      await reply(translate('subscription.noPlans', locale), withDisabledPreview());
+      return;
+    }
+
+    const provider = config.paymentProvider;
+    try {
+      let order = await paymentStore.findPendingOrder(telegramId, plan.id, provider);
+      if (!order) {
+        order = await paymentStore.createOrder({
+          userId: telegramId,
+          planId: plan.id,
+          amount: plan.price,
+          provider
+        });
+        console.log(
+          `[payment] created order id=${order.id} user=${order.userId} plan=${order.planId} amount=${order.amount} provider=${order.provider}`
+        );
+      } else {
+        console.log(
+          `[payment] reuse pending order id=${order.id} user=${order.userId} plan=${order.planId} amount=${order.amount} provider=${order.provider}`
+        );
+      }
+      const payment = await paymentClient.createPayment({
+        amount: plan.price,
+        description: formatOrderDescription(order.id),
+        returnUrl: buildPaymentReturnUrl(),
+        internalOrderId: order.id
+      });
+      console.log(
+        `[payment] payment link created order=${order.id} user=${order.userId} payment_id=${payment.id} url=${payment.confirmationUrl}`
+      );
+      await paymentStore.setOrderExternalId(order.id, payment.id);
+      const message = formatPaymentLinkMessage(plan, locale);
+      const keyboard = buildPaymentKeyboard(payment.confirmationUrl, locale);
+      await reply(message, withDisabledPreview({ ...keyboard, parse_mode: 'HTML' as const }));
+    } catch (error) {
+      console.error('Failed to create payment link:', error);
+      await reply(translate('subscription.paymentFailed', locale), withDisabledPreview());
+    }
+  };
+
   const handleStartPayload = async (chatId: number, payload: string | undefined, ctx: Context): Promise<void> => {
     if (payload?.startsWith(STREAM_INFO_PAYLOAD_PREFIX)) {
       const extensionValue = payload.slice(STREAM_INFO_PAYLOAD_PREFIX.length) || 'unknown';
@@ -844,6 +910,14 @@ export const createTelegramBot = (
     if (payload?.startsWith(CANT_FIND_HELP_PAYLOAD_PREFIX)) {
       await ctx.reply(translateForChat(chatId, 'search.cantFindHint'), withDisabledPreview());
       return;
+    }
+    if (payload?.startsWith(SUBSCRIPTION_START_PREFIX)) {
+      const rawPlanId = payload.slice(SUBSCRIPTION_START_PREFIX.length);
+      const planId = Number.parseInt(rawPlanId, 10);
+      if (!Number.isNaN(planId)) {
+        await handleSubscriptionPlan(chatId, planId, (text, extra) => ctx.reply(text, withDisabledPreview(extra)));
+        return;
+      }
     }
     const jobPayload = parseJobPayload(payload);
     if (jobPayload) {
@@ -925,7 +999,7 @@ export const createTelegramBot = (
     }
     const keyboard = buildSubscriptionKeyboard(plans, locale, demoPlan);
     const text = `${statusLine}\n\n${translateForChat(chatId, 'subscription.messageHtml')}`;
-    await ctx.reply(text, withDisabledPreview({ parse_mode: 'HTML' as const, ...keyboard }));
+    await ctx.reply(text, withDisabledPreview({ ...keyboard, parse_mode: 'HTML' as const }));
   });
 
   bot.command('limit', async (ctx) => {
@@ -1055,54 +1129,7 @@ export const createTelegramBot = (
       return;
     }
     await safeAnswerCallback(ctx);
-    const locale = getChatLocale(chatId);
-    const telegramId = await ensureTelegramChat(chatId);
-
-    let plan: PaymentPlan | undefined;
-    try {
-      plan = await paymentStore.getPlan(planId);
-    } catch (error) {
-      console.error('Failed to load plan:', error);
-    }
-    if (!plan || !plan.display) {
-      await ctx.reply(translate('subscription.noPlans', locale), withDisabledPreview());
-      return;
-    }
-
-    const provider = config.paymentProvider;
-    try {
-      let order = await paymentStore.findPendingOrder(telegramId, plan.id, provider);
-      if (!order) {
-        order = await paymentStore.createOrder({
-          userId: telegramId,
-          planId: plan.id,
-          amount: plan.price,
-          provider
-        });
-        console.log(
-          `[payment] created order id=${order.id} user=${order.userId} plan=${order.planId} amount=${order.amount} provider=${order.provider}`
-        );
-      } else {
-        console.log(
-          `[payment] reuse pending order id=${order.id} user=${order.userId} plan=${order.planId} amount=${order.amount} provider=${order.provider}`
-        );
-      }
-      const payment = await paymentClient.createPayment({
-        amount: plan.price,
-        description: formatOrderDescription(order.id),
-        returnUrl: buildPaymentReturnUrl(),
-        internalOrderId: order.id
-      });
-      console.log(
-        `[payment] payment link created order=${order.id} user=${order.userId} payment_id=${payment.id} url=${payment.confirmationUrl}`
-      );
-      await paymentStore.setOrderExternalId(order.id, payment.id);
-      const message = formatPaymentLinkMessage(plan, payment.confirmationUrl, locale);
-      await ctx.reply(message, withDisabledPreview({ parse_mode: 'HTML' as const }));
-    } catch (error) {
-      console.error('Failed to create payment link:', error);
-      await ctx.reply(translate('subscription.paymentFailed', locale), withDisabledPreview());
-    }
+    await handleSubscriptionPlan(chatId, planId, (text, extra) => ctx.reply(text, withDisabledPreview(extra)));
   });
 
   bot.action(DEMO_ACTIVATE_PAYLOAD, async (ctx) => {

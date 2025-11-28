@@ -3,9 +3,10 @@ import { D1BaseClient } from './d1BaseClient.js';
 
 type PlanRow = {
   id: number;
-  name: string;
+  label_key: string;
   price: number;
   duration_days: number;
+  old_price: number | null;
   display: number;
 };
 
@@ -35,9 +36,10 @@ type DemoUsedRow = {
 
 const toPaymentPlan = (row: PlanRow): PaymentPlan => ({
   id: row.id,
-  name: row.name,
+  labelKey: row.label_key,
   price: row.price,
   durationDays: row.duration_days,
+  oldPrice: row.old_price,
   display: row.display !== 0
 });
 
@@ -190,9 +192,10 @@ export class D1PaymentStore extends D1BaseClient {
       `
       CREATE TABLE IF NOT EXISTS plans (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
+        label_key TEXT NOT NULL,
         price REAL NOT NULL,
         duration_days INTEGER NOT NULL,
+        old_price REAL DEFAULT NULL,
         display INTEGER NOT NULL DEFAULT 1
       )
     `.trim(),

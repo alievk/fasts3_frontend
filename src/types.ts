@@ -154,9 +154,10 @@ export type PaymentStatus = 'pending' | 'paid' | 'canceled';
 
 export type PaymentPlan = {
   id: number;
-  name: string;
+  labelKey: string;
   price: number;
   durationDays: number;
+  oldPrice: number | null;
   display: boolean;
 };
 
