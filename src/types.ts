@@ -98,6 +98,7 @@ export interface Config {
   botTranslationsBundle: BotTranslationsBundle;
   demoPlanId?: number;
   weeklyQuotaGb?: number;
+  telegramAdminId?: number;
 }
 
 export type UserDbProvider = 'd1';

@@ -108,6 +108,12 @@ export class D1PaymentStore extends D1BaseClient {
     return rows.map(toPaymentPlan);
   }
 
+  async listAllPlans(): Promise<PaymentPlan[]> {
+    await this.ready;
+    const rows = await this.query<PlanRow>('SELECT * FROM plans ORDER BY id');
+    return rows.map(toPaymentPlan);
+  }
+
   async markOrderPaid(orderId: number, paidAt: string): Promise<void> {
     await this.ready;
     await this.execute(

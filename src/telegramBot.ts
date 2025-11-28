@@ -61,6 +61,7 @@ let defaultLocale = PRIMARY_LOCALE;
 
 type PaymentStore = {
   listVisiblePlans: () => Promise<PaymentPlan[]>;
+  listAllPlans: () => Promise<PaymentPlan[]>;
   getPlan: (planId: number) => Promise<PaymentPlan | undefined>;
   findPendingOrder: (userId: string, planId: number, provider: string) => Promise<PaymentOrder | undefined>;
   createOrder: (params: {
@@ -865,7 +866,8 @@ export const createTelegramBot = (
     } catch (error) {
       console.error('Failed to load plan:', error);
     }
-    if (!plan || !plan.display) {
+    const isAdmin = config.telegramAdminId !== undefined && chatId === config.telegramAdminId;
+    if (!plan || (!plan.display && !isAdmin)) {
       await bot.telegram.sendMessage(chatId, translate('subscription.noPlans', locale), withDisabledPreview());
       return;
     }
@@ -995,9 +997,10 @@ export const createTelegramBot = (
     } else {
       statusLine = translate('subscription.noActive', locale);
     }
+    const isAdmin = config.telegramAdminId !== undefined && chatId === config.telegramAdminId;
     let plans: PaymentPlan[] = [];
     try {
-      plans = await paymentStore.listVisiblePlans();
+      plans = isAdmin ? await paymentStore.listAllPlans() : await paymentStore.listVisiblePlans();
     } catch (error) {
       console.error('Failed to load subscription plans:', error);
     }

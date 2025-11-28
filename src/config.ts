@@ -114,6 +114,7 @@ export const loadConfig = (): Config => {
 
   const demoPlanId = parsePositiveInt(process.env.DEMO_PLAN_ID);
   const weeklyQuotaGb = parsePositiveFloat(process.env.WEEKLY_QUOTA_GB);
+  const telegramAdminId = parsePositiveInt(process.env.TELEGRAM_ADMIN_ID);
 
   return {
     apiBaseUrl,
@@ -137,6 +138,7 @@ export const loadConfig = (): Config => {
     botTranslationsBundle,
     timezone,
     demoPlanId,
-    weeklyQuotaGb
+    weeklyQuotaGb,
+    telegramAdminId
   };
 };

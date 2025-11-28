@@ -58,6 +58,7 @@ const createRuntimeWithStubs = () => {
   const downloadService = new StubDownloadService();
   const paymentStore = {
     listVisiblePlans: async () => [],
+    listAllPlans: async () => [],
     getPlan: async () => undefined,
     findPendingOrder: async () => undefined,
     createOrder: async () => {
