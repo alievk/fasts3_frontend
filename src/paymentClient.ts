@@ -6,7 +6,7 @@ export const createPaymentClient = (config: Config): PaymentClient => {
     if (!config.yookassaShopId || !config.yookassaSecretKey) {
       throw new Error('YOOKASSA_SHOP_ID and YOOKASSA_SECRET_KEY are required for Yookassa provider');
     }
-    return new YookassaClient(config.yookassaShopId, config.yookassaSecretKey);
+    return new YookassaClient(config.yookassaShopId, config.yookassaSecretKey, config.yookassaReceiptEmail);
   }
   throw new Error(`Unsupported payment provider: ${config.paymentProvider}`);
 };

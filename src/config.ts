@@ -97,6 +97,7 @@ export const loadConfig = (): Config => {
   const paymentProvider = resolvePaymentProvider();
   const yookassaShopId = process.env.YOOKASSA_SHOP_ID;
   const yookassaSecretKey = process.env.YOOKASSA_SECRET_KEY;
+  const yookassaReceiptEmail = process.env.YOOKASSA_RECEIPT_EMAIL?.trim();
   if (paymentProvider === 'yookassa') {
     if (!yookassaShopId || !yookassaSecretKey) {
       throw new Error('YOOKASSA_SHOP_ID and YOOKASSA_SECRET_KEY are required for Yookassa provider');
@@ -128,6 +129,7 @@ export const loadConfig = (): Config => {
     paymentProvider,
     yookassaShopId,
     yookassaSecretKey,
+    yookassaReceiptEmail,
     d1AccountId,
     d1DatabaseId,
     d1ApiToken,

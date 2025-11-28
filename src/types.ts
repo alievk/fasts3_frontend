@@ -93,6 +93,7 @@ export interface Config {
   paymentProvider: PaymentProvider;
   yookassaShopId?: string;
   yookassaSecretKey?: string;
+  yookassaReceiptEmail?: string;
   botLocale: string;
   botTranslationsBundle: BotTranslationsBundle;
   demoPlanId?: number;

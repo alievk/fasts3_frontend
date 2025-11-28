@@ -26,11 +26,13 @@ const formatAmount = (value: number): string => value.toFixed(2);
 export class YookassaClient implements PaymentClient {
   private readonly authHeader: string;
   private readonly endpoint: string;
+  private readonly receiptEmail?: string;
 
-  constructor(private readonly shopId: string, private readonly secretKey: string) {
+  constructor(private readonly shopId: string, private readonly secretKey: string, receiptEmail?: string) {
     const token = Buffer.from(`${shopId}:${secretKey}`).toString('base64');
     this.authHeader = `Basic ${token}`;
     this.endpoint = 'https://api.yookassa.ru/v3/payments';
+    this.receiptEmail = receiptEmail;
   }
 
   async createPayment(input: {
@@ -39,8 +41,9 @@ export class YookassaClient implements PaymentClient {
     returnUrl: string;
     internalOrderId: number;
   }): Promise<PaymentLink> {
-    const payload = {
-      amount: { value: formatAmount(input.amount), currency: 'RUB' },
+    const amountValue = formatAmount(input.amount);
+    const payload: Record<string, unknown> = {
+      amount: { value: amountValue, currency: 'RUB' },
       capture: true,
       confirmation: {
         type: 'redirect',
@@ -51,6 +54,21 @@ export class YookassaClient implements PaymentClient {
         internal_order_id: input.internalOrderId
       }
     };
+    if (this.receiptEmail) {
+      payload.receipt = {
+        customer: { email: this.receiptEmail },
+        items: [
+          {
+            description: input.description,
+            quantity: '1.00',
+            amount: { value: amountValue, currency: 'RUB' },
+            vat_code: 1,
+            payment_subject: 'service',
+            payment_mode: 'full_payment'
+          }
+        ]
+      };
+    }
     const response = await fetch(this.endpoint, {
       method: 'POST',
       headers: {

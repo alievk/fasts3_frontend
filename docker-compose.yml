@@ -19,6 +19,9 @@ services:
     environment:
       TZ: ${TZ:-UTC}
       TELEGRAM_BOT_TOKEN: 8569009509:AAEjzCtTRFu4T8aoLTspuWt-V3KNS6z2Aks
+      YOOKASSA_SHOP_ID: 1214381
+      YOOKASSA_SECRET_KEY: test_X-3w_lJo83DP96hpbmt72BFTn3NecGb1K23cudq-9QU
+      YOOKASSA_RECEIPT_EMAIL: ${YOOKASSA_RECEIPT_EMAIL:-}
     volumes:
       - .:/app
       - telegram_bot_node_modules:/app/node_modules
