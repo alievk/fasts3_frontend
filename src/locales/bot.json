@@ -94,7 +94,7 @@
     "subscription.noActive": "<b>У тебя нет активной подписки.</b>",
     "subscription.demoButton": "🎁 Попробовать бесплатно ({days} дн.)",
     "subscription.demoActivated": "Демо-подписка активирована! Действует до {date}.",
-    "subscription.paymentReceived": "Оплата получена ✅ Подписка действует до {date}",
+    "subscription.paymentReceived": "<b>Оплата получена ✅</b>\n\nПодписка действует до {date}.",
     "subscription.demoOffer": "У тебя нет активной подписки. Попробуй бесплатный период или оформи /subscription",
     "plans.3months": "3 месяца",
     "plans.6months": "🔥 6 месяцев",
