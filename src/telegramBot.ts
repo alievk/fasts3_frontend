@@ -304,6 +304,7 @@ const parseDetailToken = (token: string | undefined | null): { provider: string;
 
 const searchSessions = new Map<number, SearchSession>();
 const removalSuppressions = new Map<string, string>();
+const paymentMessages = new Map<number, number>();
 
 const ensureTelegramChat = async (chatId: number): Promise<string> => {
   const telegramId = String(chatId);
@@ -842,11 +843,19 @@ export const createTelegramBot = (
     return next();
   });
 
-  const handleSubscriptionPlan = async (
-    chatId: number,
-    planId: number,
-    reply: (text: string, extra?: object) => Promise<unknown>
-  ): Promise<void> => {
+  const deletePaymentMessage = async (chatId: number): Promise<void> => {
+    const messageId = paymentMessages.get(chatId);
+    if (messageId) {
+      try {
+        await bot.telegram.deleteMessage(chatId, messageId);
+      } catch {
+        // Message may have been deleted already
+      }
+      paymentMessages.delete(chatId);
+    }
+  };
+
+  const handleSubscriptionPlan = async (chatId: number, planId: number): Promise<void> => {
     const locale = getChatLocale(chatId);
     const telegramId = await ensureTelegramChat(chatId);
 
@@ -857,7 +866,7 @@ export const createTelegramBot = (
       console.error('Failed to load plan:', error);
     }
     if (!plan || !plan.display) {
-      await reply(translate('subscription.noPlans', locale), withDisabledPreview());
+      await bot.telegram.sendMessage(chatId, translate('subscription.noPlans', locale), withDisabledPreview());
       return;
     }
 
@@ -889,12 +898,18 @@ export const createTelegramBot = (
         `[payment] payment link created order=${order.id} user=${order.userId} payment_id=${payment.id} url=${payment.confirmationUrl}`
       );
       await paymentStore.setOrderExternalId(order.id, payment.id);
+      await deletePaymentMessage(chatId);
       const message = formatPaymentLinkMessage(plan, locale);
       const keyboard = buildPaymentKeyboard(payment.confirmationUrl, locale);
-      await reply(message, withDisabledPreview({ ...keyboard, parse_mode: 'HTML' as const }));
+      const sent = await bot.telegram.sendMessage(
+        chatId,
+        message,
+        withDisabledPreview({ ...keyboard, parse_mode: 'HTML' as const })
+      );
+      paymentMessages.set(chatId, sent.message_id);
     } catch (error) {
       console.error('Failed to create payment link:', error);
-      await reply(translate('subscription.paymentFailed', locale), withDisabledPreview());
+      await bot.telegram.sendMessage(chatId, translate('subscription.paymentFailed', locale), withDisabledPreview());
     }
   };
 
@@ -915,7 +930,7 @@ export const createTelegramBot = (
       const rawPlanId = payload.slice(SUBSCRIPTION_START_PREFIX.length);
       const planId = Number.parseInt(rawPlanId, 10);
       if (!Number.isNaN(planId)) {
-        await handleSubscriptionPlan(chatId, planId, (text, extra) => ctx.reply(text, withDisabledPreview(extra)));
+        await handleSubscriptionPlan(chatId, planId);
         return;
       }
     }
@@ -1129,7 +1144,7 @@ export const createTelegramBot = (
       return;
     }
     await safeAnswerCallback(ctx);
-    await handleSubscriptionPlan(chatId, planId, (text, extra) => ctx.reply(text, withDisabledPreview(extra)));
+    await handleSubscriptionPlan(chatId, planId);
   });
 
   bot.action(DEMO_ACTIVATE_PAYLOAD, async (ctx) => {

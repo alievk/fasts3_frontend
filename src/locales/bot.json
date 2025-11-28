@@ -86,7 +86,7 @@
       "Остались вопросы? Пиши @numpy_as_np"
     ],
     "subscription.noPlans": "Тарифы временно недоступны. Попробуй позже.",
-    "subscription.payLinkLabel": "Оплатить",
+    "subscription.payLinkLabel": "💳 Оплатить",
     "subscription.paymentLinkHtml": "<b>{plan} ({price})</b>\n\nПосле перехода по ссылке откроется страница оплаты. После успешной оплаты я отправлю уведомление сюда.",
     "subscription.paymentFailed": "Не удалось создать ссылку на оплату. Попробуй позже.",
     "subscription.expired": "Подписка истекла. Продли её с помощью /subscription чтобы начинать новые загрузки.",
