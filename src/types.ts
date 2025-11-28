@@ -104,7 +104,7 @@ export type PaymentProvider = 'yookassa';
 
 export type BotTranslations = Record<string, Record<string, string | string[]>>;
 
-export type BotTranslationsBundle = 'bot' | 'bot_fake';
+export type BotTranslationsBundle = 'bot';
 
 export interface ApiClient {
   search(query: string): Promise<SearchResult[]>;

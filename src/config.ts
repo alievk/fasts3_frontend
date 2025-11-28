@@ -52,9 +52,6 @@ const resolvePaymentProvider = (): PaymentProvider => {
 
 const resolveBotTranslationsBundle = (): BotTranslationsBundle => {
   const raw = process.env.TELEGRAM_TRANSLATION_BUNDLE?.trim().toLowerCase();
-  if (raw === 'bot_fake') {
-    return 'bot_fake';
-  }
   if (raw && raw !== 'bot') {
     console.warn(`Unknown TELEGRAM_TRANSLATION_BUNDLE "${raw}", falling back to "bot"`);
   }

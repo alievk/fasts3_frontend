@@ -1,4 +1,4 @@
-PROFILE = fake
+PROFILE = prod
 COMPOSE = docker compose -f docker-compose.yml --profile $(PROFILE)
 
 SRC_DIR = src

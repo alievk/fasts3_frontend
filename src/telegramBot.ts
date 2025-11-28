@@ -20,7 +20,6 @@ import { normalizeHash } from './hashUtils.js';
 import { createSearchPipeline } from './searchPipeline.js';
 import { createChatRegistry } from './chatRegistry.js';
 import botTranslationsData from './locales/bot.json' with { type: 'json' };
-import botFakeTranslationsData from './locales/bot_fake.json' with { type: 'json' };
 import { D1PaymentStore } from './d1PaymentStore.js';
 import { createPaymentClient } from './paymentClient.js';
 
@@ -47,9 +46,8 @@ const withDisabledPreviewEdit = (extra?: EditMessageTextExtra): EditMessageTextE
   } as EditMessageTextExtra);
 
 let config: Config;
-const TRANSLATION_BUNDLES: Record<'bot' | 'bot_fake', BotTranslations> = {
-  bot: botTranslationsData as BotTranslations,
-  bot_fake: botFakeTranslationsData as BotTranslations
+const TRANSLATION_BUNDLES: Record<'bot', BotTranslations> = {
+  bot: botTranslationsData as BotTranslations
 };
 
 type PaymentStore = {
