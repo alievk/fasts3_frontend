@@ -184,7 +184,11 @@ const buildPaymentReturnUrl = (): string => {
   return `https://t.me/${username}`;
 };
 
-const formatOrderDescription = (orderId: number): string => `Order #${orderId}`;
+const formatOrderDescription = (plan: PaymentPlan): string => {
+  const label = translate(plan.labelKey, 'ru');
+  const username = getBotUsername();
+  return `Подписка ${label} (@${username})`;
+};
 
 const buildSubscriptionKeyboard = (plans: PaymentPlan[], locale: string, demoPlan?: PaymentPlan) => {
   const buttons = plans.map((plan) =>
@@ -892,7 +896,7 @@ export const createTelegramBot = (
       }
       const payment = await paymentClient.createPayment({
         amount: plan.price,
-        description: formatOrderDescription(order.id),
+        description: formatOrderDescription(plan),
         returnUrl: buildPaymentReturnUrl(),
         internalOrderId: order.id
       });
