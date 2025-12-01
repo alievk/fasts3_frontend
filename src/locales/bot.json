@@ -155,7 +155,7 @@
     "limit.message": "Использовано {used} ГБ из {quota} ГБ за неделю.",
     "limit.refreshIn": "Лимит обновится через {days} дн.",
     "limit.unlimited": "∞",
-    "notifications.jobCompleted": "Задание \"{title}\" завершено — {link}",
+    "notifications.jobCompleted": "Задание завершено:\n\n<b>{title}</b>\n\n{link}",
     "notifications.jobRemoved": "Задание удалено: {label}",
     "locale.updated": "Язык переключен на {language}.",
     "locale.selfName": "Русский",
