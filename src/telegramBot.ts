@@ -80,15 +80,8 @@ type PaymentStore = {
 };
 
 const chatLocales = new Map<number, string>();
-const getLocaleFlag = (locale: string): string => {
-  if (locale === 'ru') {
-    return '🇷🇺';
-  }
-  if (locale === 'en') {
-    return '🇬🇧';
-  }
-  return '';
-};
+const chatProviders = new Map<number, string>();
+const getLocaleFlag = (locale: string): string => translate('locale.flag', locale);
 const cacheChatLocale = (chatId: number, locale: string | null | undefined): void => {
   if (!locale || locale === defaultLocale) {
     chatLocales.delete(chatId);
@@ -108,6 +101,26 @@ const setChatLocale = (chatId: number, locale: string): string => {
   cacheChatLocale(chatId, normalized === defaultLocale ? null : normalized);
   return normalized;
 };
+const getAvailableProviders = (): string[] => config.searchProviders ?? [];
+const getDefaultProvider = (): string => getAvailableProviders()[0] ?? 'RuTracker';
+const cacheChatProvider = (chatId: number, provider: string | null | undefined): void => {
+  const def = getDefaultProvider();
+  if (!provider || provider === def) {
+    chatProviders.delete(chatId);
+    return;
+  }
+  chatProviders.set(chatId, provider);
+};
+const getChatProvider = (chatId?: number): string => {
+  if (chatId === undefined) return getDefaultProvider();
+  return chatProviders.get(chatId) ?? getDefaultProvider();
+};
+const setChatProvider = (chatId: number, provider: string): string => {
+  const available = getOrderedProviders();
+  const normalized = available.includes(provider) ? provider : getDefaultProvider();
+  cacheChatProvider(chatId, normalized);
+  return normalized;
+};
 const translateForChat = (chatId: number | undefined, key: string, params?: TranslationParams): string =>
   translate(key, getChatLocale(chatId), params);
 const translateDefault = (key: string, params?: TranslationParams): string => translate(key, defaultLocale, params);
@@ -119,15 +132,40 @@ const getOrderedLocales = (): string[] => {
   const extra = available.filter((locale) => !preferredOrder.includes(locale));
   return [...primary, ...extra];
 };
-const buildLanguageKeyboard = () => {
+const ALL_PROVIDERS = ['RuTracker', 'RuTor', 'Kinozal', 'NoNameClub'];
+const getOrderedProviders = (): string[] => {
+  const allowed = getAvailableProviders();
+  return allowed.length > 0 ? allowed : ALL_PROVIDERS;
+};
+const buildSettingsKeyboard = (chatId: number) => {
+  const locale = getChatLocale(chatId);
+  const currentProvider = getChatProvider(chatId);
   const locales = getOrderedLocales();
-  const buttons = locales.map((locale) => {
-    const flag = getLocaleFlag(locale);
-    const name = getLocaleDisplayName(locale);
-    const label = flag ? `${flag} ${name}` : name;
-    return Markup.button.callback(label, `set-locale:${locale}`);
+  const providers = getOrderedProviders();
+
+  const langButtons = locales.map((loc) => {
+    const flag = getLocaleFlag(loc);
+    const name = getLocaleDisplayName(loc);
+    const label = loc === locale ? `✓ ${flag} ${name}` : `${flag} ${name}`;
+    return Markup.button.callback(label, `set-locale:${loc}`);
   });
-  return Markup.inlineKeyboard([buttons]);
+
+  const provButtons = providers.map((prov) => {
+    const label = prov === currentProvider ? `✓ ${prov}` : prov;
+    return Markup.button.callback(label, `set-provider:${prov}`);
+  });
+
+  return Markup.inlineKeyboard([langButtons, provButtons]);
+};
+const buildSettingsMessage = (chatId: number): string => {
+  const locale = getChatLocale(chatId);
+  const currentProvider = getChatProvider(chatId);
+  const title = translate('settings.title', locale);
+  const langLabel = translate('settings.language', locale);
+  const provLabel = translate('settings.provider', locale);
+  const flag = getLocaleFlag(locale);
+  const langName = getLocaleDisplayName(locale);
+  return [title, '', `${langLabel}: ${flag} ${langName}`, `${provLabel}: ${currentProvider}`].join('\n');
 };
 const buildStartContent = (locale: string) => {
   const howItWorks = translate('common.howItWorksHtml', locale);
@@ -246,7 +284,7 @@ const getBotCommands = (locale: string) => [
   { command: 'limit', description: translate('commands.limitDescription', locale) },
   { command: 'subscription', description: translate('commands.subscriptionDescription', locale) },
   { command: 'help', description: translate('commands.helpDescription', locale) },
-  { command: 'lang', description: translate('commands.langDescription', locale) }
+  { command: 'settings', description: translate('commands.settingsDescription', locale) }
 ];
 
 const activeChats = new Set<number>();
@@ -310,11 +348,14 @@ const parseDetailToken = (token: string | undefined | null): { provider: string;
 const searchSessions = new Map<number, SearchSession>();
 const removalSuppressions = new Map<string, string>();
 const paymentMessages = new Map<number, number>();
+const settingsMessages = new Map<number, number>();
 
 const ensureTelegramChat = async (chatId: number): Promise<string> => {
   const telegramId = String(chatId);
   const record = await chatRegistry.registerChat(telegramId);
   cacheChatLocale(chatId, record.locale ?? null);
+  const provider = await chatRegistry.getChatProvider(telegramId);
+  cacheChatProvider(chatId, provider);
   return telegramId;
 };
 
@@ -919,6 +960,26 @@ export const createTelegramBot = (
     }
   };
 
+  const sendOrUpdateSettings = async (chatId: number, editMessageId?: number): Promise<void> => {
+    const text = buildSettingsMessage(chatId);
+    const keyboard = buildSettingsKeyboard(chatId);
+    const messageId = editMessageId ?? settingsMessages.get(chatId);
+    if (messageId) {
+      try {
+        await bot.telegram.editMessageText(chatId, messageId, undefined, text, {
+          parse_mode: 'HTML',
+          disable_web_page_preview: true,
+          ...keyboard
+        } as EditMessageTextExtra);
+        return;
+      } catch {
+        settingsMessages.delete(chatId);
+      }
+    }
+    const sent = await bot.telegram.sendMessage(chatId, text, withDisabledPreview({ parse_mode: 'HTML' as const, ...keyboard }));
+    settingsMessages.set(chatId, sent.message_id);
+  };
+
   const handleStartPayload = async (chatId: number, payload: string | undefined, ctx: Context): Promise<void> => {
     if (payload?.startsWith(STREAM_INFO_PAYLOAD_PREFIX)) {
       const extensionValue = payload.slice(STREAM_INFO_PAYLOAD_PREFIX.length) || 'unknown';
@@ -1071,14 +1132,12 @@ export const createTelegramBot = (
     await ctx.reply(text, withDisabledPreview({ parse_mode: 'HTML' as const }));
   });
 
-  bot.command('lang', async (ctx) => {
+  bot.command('settings', async (ctx) => {
     const chatId = getPrivateChatId(ctx);
     if (chatId === undefined) {
       return;
     }
-    const keyboard = buildLanguageKeyboard();
-    const text = translateForChat(chatId, 'lang.prompt');
-    await ctx.reply(text, withDisabledPreview({ ...keyboard }));
+    await sendOrUpdateSettings(chatId);
   });
 
   bot.command('search', async (ctx) => {
@@ -1113,7 +1172,9 @@ export const createTelegramBot = (
     }
     try {
       await ctx.reply(translateForChat(chatId, 'search.searching', { query }), withDisabledPreview());
-      const rawResults = await downloadService.search(query);
+      const allResults = await downloadService.search(query);
+      const userProvider = getChatProvider(chatId);
+      const rawResults = allResults.filter((r) => r.provider.toLowerCase() === userProvider.toLowerCase());
       if (rawResults.length === 0) {
         await ctx.reply(translateForChat(chatId, 'search.noResults', { query }), withDisabledPreview());
         return;
@@ -1139,6 +1200,40 @@ export const createTelegramBot = (
     }
     const telegramId = await ensureTelegramChat(chatId);
     await sendJobList(chatId, telegramId);
+  });
+
+  bot.action(/^set-locale:(\w+)$/i, async (ctx) => {
+    const match = ctx.match as RegExpExecArray | undefined;
+    const requested = match?.[1]?.toLowerCase();
+    const chatId = getPrivateChatId(ctx);
+    if (chatId === undefined || !requested || !isSupportedLocale(requested)) {
+      await safeAnswerCallback(ctx);
+      return;
+    }
+    const telegramId = await ensureTelegramChat(chatId);
+    const newLocale = setChatLocale(chatId, requested);
+    await chatRegistry.setChatLocale(telegramId, newLocale === defaultLocale ? null : newLocale);
+    await safeAnswerCallback(ctx);
+    const messageId = (ctx.callbackQuery.message as { message_id?: number } | undefined)?.message_id;
+    await sendOrUpdateSettings(chatId, messageId);
+  });
+
+  bot.action(/^set-provider:(.+)$/i, async (ctx) => {
+    const match = ctx.match as RegExpExecArray | undefined;
+    const requested = match?.[1];
+    const chatId = getPrivateChatId(ctx);
+    const available = getOrderedProviders();
+    if (chatId === undefined || !requested || !available.includes(requested)) {
+      await safeAnswerCallback(ctx);
+      return;
+    }
+    const telegramId = await ensureTelegramChat(chatId);
+    const newProvider = setChatProvider(chatId, requested);
+    const def = getDefaultProvider();
+    await chatRegistry.setChatProvider(telegramId, newProvider === def ? null : newProvider);
+    await safeAnswerCallback(ctx);
+    const messageId = (ctx.callbackQuery.message as { message_id?: number } | undefined)?.message_id;
+    await sendOrUpdateSettings(chatId, messageId);
   });
 
   bot.action(new RegExp(`^${SUBSCRIPTION_PAYLOAD_PREFIX}(\\d+)$`), async (ctx) => {
@@ -1398,24 +1493,6 @@ export const createTelegramBot = (
       console.error('Failed to edit job message after deletion:', error);
     }
     await sendJobList(chatId, telegramId);
-  });
-
-  bot.action(/^set-locale:(\w+)$/i, async (ctx) => {
-    const match = ctx.match as RegExpExecArray | undefined;
-    const requested = match?.[1]?.toLowerCase();
-    const chatId = getPrivateChatId(ctx);
-    if (chatId === undefined || !requested || !isSupportedLocale(requested)) {
-      await safeAnswerCallback(ctx);
-      return;
-    }
-    const telegramId = await ensureTelegramChat(chatId);
-    const newLocale = setChatLocale(chatId, requested);
-    await chatRegistry.setChatLocale(telegramId, newLocale === defaultLocale ? null : newLocale);
-    await safeAnswerCallback(ctx);
-    await sendTelegramMessage(
-      chatId,
-      translate('locale.updated', newLocale, { language: getLocaleDisplayName(newLocale) })
-    );
   });
 
   downloadService.on('jobUpdated', (job) => {

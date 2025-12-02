@@ -6,6 +6,7 @@ type UserRow = {
   created_at: string;
   updated_at: string;
   locale: string | null;
+  provider: string | null;
   subscription_expires_at?: string | null;
   demo_used?: number | null;
   weekly_quota_gb?: number | null;
@@ -148,6 +149,26 @@ export class D1ChatRegistry extends D1BaseClient implements ChatRegistry {
     );
   }
 
+  async getChatProvider(telegramId: string): Promise<string | null> {
+    await this.ready;
+    const rows = await this.query<{ provider: string | null }>('SELECT provider FROM users WHERE telegram_id = ?', [telegramId]);
+    return rows[0]?.provider ?? null;
+  }
+
+  async setChatProvider(telegramId: string, provider: string | null): Promise<void> {
+    await this.ready;
+    const timestamp = new Date().toISOString();
+    await this.execute(
+      `
+      UPDATE users
+      SET provider = ?,
+          updated_at = ?
+      WHERE telegram_id = ?
+    `.trim(),
+      [provider, timestamp, telegramId]
+    );
+  }
+
   async recordDownload(telegramId: string, jobId: string, hash: string, sizeBytes: number): Promise<void> {
     await this.ready;
     const timestamp = new Date().toISOString();
@@ -238,11 +259,20 @@ export class D1ChatRegistry extends D1BaseClient implements ChatRegistry {
     await this.ensureSubscriptionColumn();
     await this.ensureDemoUsedColumn();
     await this.ensureWeeklyQuotaColumn();
+    await this.ensureProviderColumn();
   }
 
   private async ensureWeeklyQuotaColumn(): Promise<void> {
     try {
       await this.execute('ALTER TABLE users ADD COLUMN weekly_quota_gb REAL');
+    } catch {
+      // Column already exists
+    }
+  }
+
+  private async ensureProviderColumn(): Promise<void> {
+    try {
+      await this.execute('ALTER TABLE users ADD COLUMN provider TEXT');
     } catch {
       // Column already exists
     }

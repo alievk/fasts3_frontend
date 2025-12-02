@@ -87,6 +87,16 @@ export class MemoryChatRegistry implements ChatRegistry {
     this.chats.set(telegramId, { ...existing, locale, updatedAt: now() });
   }
 
+  private providers = new Map<string, string | null>();
+
+  async getChatProvider(telegramId: string): Promise<string | null> {
+    return this.providers.get(telegramId) ?? null;
+  }
+
+  async setChatProvider(telegramId: string, provider: string | null): Promise<void> {
+    this.providers.set(telegramId, provider);
+  }
+
   async recordDownload(telegramId: string, _jobId: string, hash: string, sizeBytes: number): Promise<void> {
     this.downloads.push({ telegramId, hash, sizeBytes, completedAt: new Date() });
   }

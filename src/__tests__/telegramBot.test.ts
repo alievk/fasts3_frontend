@@ -84,9 +84,9 @@ const createRuntimeWithStubs = () => {
     paymentClient: paymentClient as any
   });
   const sentMessages: { chatId: number; text: string; replyMarkup?: unknown }[] = [];
-  (runtime.bot.telegram as any).sendMessage = async (chatId: number, text: string) => {
-    sentMessages.push({ chatId, text });
-    return {};
+  (runtime.bot.telegram as any).sendMessage = async (chatId: number, text: string, extra?: { reply_markup?: unknown }) => {
+    sentMessages.push({ chatId, text, replyMarkup: extra?.reply_markup });
+    return { message_id: Date.now() };
   };
   (runtime.bot.telegram as any).deleteMessage = async () => ({});
   (runtime.bot.telegram as any).editMessageText = async () => ({});
@@ -153,23 +153,28 @@ test('stale detail tokens are treated as expired', async () => {
   );
 });
 
-test('/lang shows language buttons with localized prompt', async () => {
+test('/settings shows language and provider buttons', async () => {
   const { runtime, sentMessages } = createRuntimeWithStubs();
+  await runtime.start();
   await runtime.bot.handleUpdate({
     update_id: 3,
     message: {
       message_id: 30,
       date: Math.floor(Date.now() / 1000),
       chat: { id: 7, type: 'private', first_name: 'User' },
-      text: '/lang',
-      entities: [{ offset: 0, length: 5, type: 'bot_command' }]
+      text: '/settings',
+      entities: [{ offset: 0, length: 9, type: 'bot_command' }]
     }
   } as any);
   const message = sentMessages.find(({ chatId }) => chatId === 7);
-  assert.ok(message, 'expected a /lang response');
+  assert.ok(message, 'expected a /settings response');
   assert.ok(
-    message.text.includes('Choose language:') || message.text.includes('Выбери язык:'),
-    'expected language selection prompt'
+    message.text.includes('Settings') || message.text.includes('Настройки'),
+    'expected settings title'
+  );
+  assert.ok(
+    message.text.includes('Language') || message.text.includes('Язык'),
+    'expected language label'
   );
   const markup = message.replyMarkup as { inline_keyboard?: { text: string; callback_data: string }[][] } | undefined;
   assert.ok(markup && Array.isArray(markup.inline_keyboard), 'expected inline keyboard');
@@ -178,8 +183,8 @@ test('/lang shows language buttons with localized prompt', async () => {
   assert.ok(labels.some((label) => label.includes('Русский')), 'expected Russian language button');
   assert.ok(labels.some((label) => label.includes('English')), 'expected English language button');
   const callbacks = buttons.map((button) => button.callback_data);
-  assert.ok(callbacks.includes('set-locale:ru'), 'expected set-locale:ru callback');
-  assert.ok(callbacks.includes('set-locale:en'), 'expected set-locale:en callback');
+  assert.ok(callbacks.some((cb) => cb.startsWith('set-locale:')), 'expected set-locale callback');
+  assert.ok(callbacks.some((cb) => cb.startsWith('set-provider:')), 'expected set-provider callback');
 });
 
 test('job completion notifies owner only once', async () => {

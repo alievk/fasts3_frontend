@@ -146,6 +146,8 @@ export interface ChatRegistry {
   getNotificationTargets(jobId: string): Promise<ChatNotificationTarget[]>;
   getChatLocale(telegramId: string): Promise<string | null>;
   setChatLocale(telegramId: string, locale: string | null): Promise<void>;
+  getChatProvider(telegramId: string): Promise<string | null>;
+  setChatProvider(telegramId: string, provider: string | null): Promise<void>;
   recordDownload(telegramId: string, jobId: string, hash: string, sizeBytes: number): Promise<void>;
   getUsageBytes(telegramId: string, days: number): Promise<number>;
   getOldestDownloadDate(telegramId: string, days: number): Promise<Date | null>;
