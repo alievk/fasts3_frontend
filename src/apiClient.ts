@@ -36,11 +36,6 @@ const formatProviderLabel = (provider: string, explicit?: string): string => {
   return PROVIDER_LABEL_OVERRIDES[provider] ?? provider;
 };
 
-const KB = 1024;
-const MB = KB * 1024;
-const GB = MB * 1024;
-const TB = GB * 1024;
-
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
@@ -74,37 +69,15 @@ const parseInteger = (value: unknown): number => {
 
 const parseSizeBytes = (value: unknown): number | null => {
   if (typeof value === 'number' && Number.isFinite(value)) {
-    return Math.max(0, value);
+    return Math.max(0, Math.round(value));
   }
-  if (typeof value !== 'string') {
-    return null;
-  }
-  const [amountRaw, unitRaw] = value.trim().split(/\s+/, 2);
-  if (!amountRaw || !unitRaw) {
-    return null;
-  }
-  const amount = Number.parseFloat(amountRaw.replace(/,/g, '.'));
-  if (!Number.isFinite(amount)) {
-    return null;
-  }
-  const multiplier = (() => {
-    switch (unitRaw.toUpperCase()) {
-      case 'TB':
-        return TB;
-      case 'GB':
-        return GB;
-      case 'MB':
-        return MB;
-      case 'KB':
-        return KB;
-      default:
-        return null;
+  if (typeof value === 'string') {
+    const parsed = Number.parseInt(value, 10);
+    if (Number.isFinite(parsed)) {
+      return Math.max(0, parsed);
     }
-  })();
-  if (!multiplier) {
-    return null;
   }
-  return Math.round(amount * multiplier);
+  return null;
 };
 
 const parseFiles = (value: unknown): SearchResultFile[] => {

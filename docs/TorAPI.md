@@ -194,6 +194,19 @@ Quick check of provider availability:
 
 ### Search by Title
 
+#### Guaranteed Parameters for All Providers
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `Name` | *str* | Full torrent name/title |
+| `Id` | *str* | Provider-specific torrent ID |
+| `Url` | *str* | Direct link to the torrent page |
+| `Torrent` | *str* | Direct link to download the .torrent file |
+| `Size` | *int* | File size in bytes |
+| `Seeds` | *str* | Number of seeders |
+| `Peers` | *str* | Number of leechers/peers |
+| `Date` | *str* | Publication/update date (format varies by provider) |
+
 #### All
 
 🔹 `curl -s http://localhost:8443/api/search/title/all?query=Bo+Path+of+the+Teal+Lotus&page=0&year=0`
@@ -206,7 +219,7 @@ Quick check of provider availability:
       "Id": "6553038",
       "Url": "https://rutracker.net/forum/viewtopic.php?t=6553038",
       "Torrent": "https://rutracker.net/forum/dl.php?t=6553038",
-      "Size": "5.56 GB",
+      "Size": 5970108416,
       "Download_Count": "49",
       "Checked": "True",
       "Type": "Аркады",
@@ -220,7 +233,7 @@ Quick check of provider availability:
       "Id": "6556973",
       "Url": "https://rutracker.net/forum/viewtopic.php?t=6556973",
       "Torrent": "https://rutracker.net/forum/dl.php?t=6556973",
-      "Size": "986.4 MB",
+      "Size": 1034289971,
       "Download_Count": "187",
       "Checked": "True",
       "Type": "Аркады",
@@ -234,7 +247,7 @@ Quick check of provider availability:
       "Id": "6552174",
       "Url": "https://rutracker.net/forum/viewtopic.php?t=6552174",
       "Torrent": "https://rutracker.net/forum/dl.php?t=6552174",
-      "Size": "800.8 MB",
+      "Size": 839713587,
       "Download_Count": "727",
       "Checked": "True",
       "Type": "Switch",
@@ -256,7 +269,7 @@ Quick check of provider availability:
       "Id": "1742972",
       "Url": "https://nnmclub.to/forum/viewtopic.php?t=1742972",
       "Torrent": "https://nnmclub.to/forum/download.php?id=1335276",
-      "Size": "944 MB",
+      "Size": 989855744,
       "Comments": "0",
       "Type": "Горячие новинки Игр",
       "Seeds": "3",
@@ -268,7 +281,7 @@ Quick check of provider availability:
       "Id": "1739268",
       "Url": "https://nnmclub.to/forum/viewtopic.php?t=1739268",
       "Torrent": "https://nnmclub.to/forum/download.php?id=1333049",
-      "Size": "5.56 GB",
+      "Size": 5970108416,
       "Comments": "1",
       "Type": "Горячие новинки Игр",
       "Seeds": "2",
@@ -280,7 +293,7 @@ Quick check of provider availability:
       "Id": "1740083",
       "Url": "https://nnmclub.to/forum/viewtopic.php?t=1740083",
       "Torrent": "https://nnmclub.to/forum/download.php?id=1333578",
-      "Size": "986 MB",
+      "Size": 1033895936,
       "Comments": "0",
       "Type": "Горячие новинки Игр",
       "Seeds": "2",
@@ -302,7 +315,7 @@ Quick check of provider availability:
     "Id": "6489949",
     "Url": "https://rutracker.net/forum/viewtopic.php?t=6489949",
     "Torrent": "https://rutracker.net/forum/dl.php?t=6489949",
-    "Size": "32.79 GB",
+    "Size": 35207471923,
     "Download_Count": "1307",
     "Checked": "True",
     "Type": "Сериалы США и Канады (HD Video)",
@@ -316,7 +329,7 @@ Quick check of provider availability:
     "Id": "6498673",
     "Url": "https://rutracker.net/forum/viewtopic.php?t=6498673",
     "Torrent": "https://rutracker.net/forum/dl.php?t=6498673",
-    "Size": "18.33 GB",
+    "Size": 19685459294,
     "Download_Count": "1784",
     "Checked": "True",
     "Type": "Сериалы США и Канады (HD Video)",
@@ -330,7 +343,7 @@ Quick check of provider availability:
     "Id": "6489937",
     "Url": "https://rutracker.net/forum/viewtopic.php?t=6489937",
     "Torrent": "https://rutracker.net/forum/dl.php?t=6489937",
-    "Size": "5.95 GB",
+    "Size": 6390262374,
     "Download_Count": "3970",
     "Checked": "True",
     "Type": "Сериалы США и Канады",
@@ -344,7 +357,7 @@ Quick check of provider availability:
     "Id": "6499482",
     "Url": "https://rutracker.net/forum/viewtopic.php?t=6499482",
     "Torrent": "https://rutracker.net/forum/dl.php?t=6499482",
-    "Size": "5.3 MB",
+    "Size": 5557453,
     "Download_Count": "54",
     "Checked": "True",
     "Type": "Саундтреки к сериалам (lossy)",
@@ -372,7 +385,7 @@ Quick check of provider availability:
     "Format": "WEB-DLRip",
     "Url": "https://kinozal.tv/details.php?id=1953041",
     "Torrent": "https://dl.kinozal.tv/download.php?id=1953041",
-    "Size": "57.64 GB",
+    "Size": 61888692429,
     "Comments": "2",
     "Seeds": "4",
     "Peers": "4",
@@ -388,7 +401,7 @@ Quick check of provider availability:
     "Format": "WEB-DL (1080p)",
     "Url": "https://kinozal.tv/details.php?id=2023066",
     "Torrent": "https://dl.kinozal.tv/download.php?id=2023066",
-    "Size": "32.79 GB",
+    "Size": 35207471923,
     "Comments": "34",
     "Seeds": "15",
     "Peers": "4",
@@ -404,7 +417,7 @@ Quick check of provider availability:
     "Format": "WEB-DLRip (720p)",
     "Url": "https://kinozal.tv/details.php?id=2042752",
     "Torrent": "https://dl.kinozal.tv/download.php?id=2042752",
-    "Size": "153.07 GB",
+    "Size": 164367097856,
     "Comments": "1",
     "Seeds": "2",
     "Peers": "4",
@@ -420,7 +433,7 @@ Quick check of provider availability:
     "Format": "WEB-DL (720p)",
     "Url": "https://kinozal.tv/details.php?id=2026484",
     "Torrent": "https://dl.kinozal.tv/download.php?id=2026484",
-    "Size": "18.33 GB",
+    "Size": 19685459294,
     "Comments": "4",
     "Seeds": "9",
     "Peers": "3",
@@ -436,7 +449,7 @@ Quick check of provider availability:
     "Format": "WEB-DLRip",
     "Url": "https://kinozal.tv/details.php?id=2022944",
     "Torrent": "https://dl.kinozal.tv/download.php?id=2022944",
-    "Size": "5.95 GB",
+    "Size": 6390262374,
     "Comments": "22",
     "Seeds": "44",
     "Peers": "10",
@@ -452,7 +465,7 @@ Quick check of provider availability:
     "Format": "WEB-DLRip (1080p)",
     "Url": "https://kinozal.tv/details.php?id=1656552",
     "Torrent": "https://dl.kinozal.tv/download.php?id=1656552",
-    "Size": "249.58 GB",
+    "Size": 268020269465,
     "Comments": "148",
     "Seeds": "11",
     "Peers": "14",
@@ -473,7 +486,7 @@ Quick check of provider availability:
     "Url": "https://rutor.info/torrent/986185/novichok_novobranec_the-rookie-s06-2024-web-dl-720p-lostfilm-tvshows-hdrezka-studio",
     "Torrent": "https://d.rutor.info/download/986185",
     "Hash": "6c3fa72ddc8f39afc7743f147e8ca3ee66ee99df",
-    "Size": "18.33 GB",
+    "Size": 19685459294,
     "Comments": "0",
     "Seeds": "7",
     "Peers": "2",
@@ -485,7 +498,7 @@ Quick check of provider availability:
     "Url": "https://rutor.info/torrent/986139/novichok_novobranec_the-rookie-s06-2024-web-dlrip-lostfilm",
     "Torrent": "https://d.rutor.info/download/986139",
     "Hash": "3348d0a58dd8f5b251c7a361c9d235549260ba60",
-    "Size": "5.95 GB",
+    "Size": 6390262374,
     "Comments": "0",
     "Seeds": "27",
     "Peers": "16",
@@ -497,7 +510,7 @@ Quick check of provider availability:
     "Url": "https://rutor.info/torrent/986138/novichok_novobranec_the-rookie-s06-2024-web-dl-1080p-lostfilm-tvshows-hdrezka-studio",
     "Torrent": "https://d.rutor.info/download/986138",
     "Hash": "2fdb28133eee0e3842ed855a08c07f35e482eedc",
-    "Size": "32.79 GB",
+    "Size": 35207471923,
     "Comments": "0",
     "Seeds": "25",
     "Peers": "8",
@@ -517,7 +530,7 @@ Quick check of provider availability:
     "Id": "1259608",
     "Url": "https://nnmclub.to/forum/viewtopic.php?t=1259608",
     "Torrent": "https://nnmclub.to/forum/download.php?id=1018672",
-    "Size": "51.2 GB",
+    "Size": 54975581389,
     "Comments": "6",
     "Type": "Зарубежные сериалы",
     "Seeds": "1",
@@ -529,7 +542,7 @@ Quick check of provider availability:
     "Id": "1278446",
     "Url": "https://nnmclub.to/forum/viewtopic.php?t=1278446",
     "Torrent": "https://nnmclub.to/forum/download.php?id=1030902",
-    "Size": "52.7 GB",
+    "Size": 56586618061,
     "Comments": "6",
     "Type": "Зарубежные сериалы",
     "Seeds": "1",
@@ -541,7 +554,7 @@ Quick check of provider availability:
     "Id": "1256703",
     "Url": "https://nnmclub.to/forum/viewtopic.php?t=1256703",
     "Torrent": "https://nnmclub.to/forum/download.php?id=1016767",
-    "Size": "10.5 GB",
+    "Size": 11274289152,
     "Comments": "31",
     "Type": "Зарубежные сериалы",
     "Seeds": "6",
@@ -553,7 +566,7 @@ Quick check of provider availability:
     "Id": "1265982",
     "Url": "https://nnmclub.to/forum/viewtopic.php?t=1265982",
     "Torrent": "https://nnmclub.to/forum/download.php?id=1022722",
-    "Size": "10.2 GB",
+    "Size": 10952754380,
     "Comments": "6",
     "Type": "Архив Сериалов и Архив Старого многосерийного кино до 90-х",
     "Seeds": "0",
@@ -595,43 +608,43 @@ Quick check of provider availability:
     "Files": [
       {
         "Name": "The.Rookie.S06E01.WEB-DLRip.RGzsRutracker.avi",
-        "Size": "644093952"
+        "Size": 644093952
       },
       {
         "Name": "The.Rookie.S06E02.WEB-DLRip.RGzsRutracker.avi",
-        "Size": "645470208"
+        "Size": 645470208
       },
       {
         "Name": "The.Rookie.S06E03.WEB-DLRip.RGzsRutracker.avi",
-        "Size": "625664000"
+        "Size": 625664000
       },
       {
         "Name": "The.Rookie.S06E04.WEB-DLRip.RGzsRutracker.avi",
-        "Size": "644755456"
+        "Size": 644755456
       },
       {
         "Name": "The.Rookie.S06E05.WEB-DLRip.RGzsRutracker.avi",
-        "Size": "625551360"
+        "Size": 625551360
       },
       {
         "Name": "The.Rookie.S06E06.WEB-DLRip.RGzsRutracker.avi",
-        "Size": "644759552"
+        "Size": 644759552
       },
       {
         "Name": "The.Rookie.S06E07.WEB-DLRip.RGzsRutracker.avi",
-        "Size": "636594176"
+        "Size": 636594176
       },
       {
         "Name": "The.Rookie.S06E08.WEB-DLRip.RGzsRutracker.avi",
-        "Size": "640335872"
+        "Size": 640335872
       },
       {
         "Name": "The.Rookie.S06E09.WEB-DLRip.RGzsRutracker.avi",
-        "Size": "644085760"
+        "Size": 644085760
       },
       {
         "Name": "The.Rookie.S06E10.WEB-DLRip.RGzsRutracker.avi",
-        "Size": "641015808"
+        "Size": 641015808
       }
     ]
   }
@@ -664,7 +677,7 @@ Quick check of provider availability:
     "Quality": "WEB-DLRip",
     "Video": "XviD, ~ 1600 Кбит/с, 720x400",
     "Audio": "Русский, английский (АС3, 2 ch, 192 Кбит/с)",
-    "Size": "5.95 ГБ",
+    "Size": 6390262374,
     "Duration": "10 x ~ 00:44:00",
     "Transcript": "Профессиональный многоголосый",
     "Seeds": "43",
@@ -690,43 +703,43 @@ Quick check of provider availability:
     "Files": [
       {
         "Name": "The.Rookie.S06E01.WEB-DLRip.RGzsRutracker.avi",
-        "Size": "614 МБ"
+        "Size": 643825664
       },
       {
         "Name": "The.Rookie.S06E02.WEB-DLRip.RGzsRutracker.avi",
-        "Size": "616 МБ"
+        "Size": 645922816
       },
       {
         "Name": "The.Rookie.S06E03.WEB-DLRip.RGzsRutracker.avi",
-        "Size": "597 МБ"
+        "Size": 625999872
       },
       {
         "Name": "The.Rookie.S06E04.WEB-DLRip.RGzsRutracker.avi",
-        "Size": "615 МБ"
+        "Size": 644874240
       },
       {
         "Name": "The.Rookie.S06E05.WEB-DLRip.RGzsRutracker.avi",
-        "Size": "597 МБ"
+        "Size": 625999872
       },
       {
         "Name": "The.Rookie.S06E06.WEB-DLRip.RGzsRutracker.avi",
-        "Size": "615 МБ"
+        "Size": 644874240
       },
       {
         "Name": "The.Rookie.S06E07.WEB-DLRip.RGzsRutracker.avi",
-        "Size": "607 МБ"
+        "Size": 636485632
       },
       {
         "Name": "The.Rookie.S06E08.WEB-DLRip.RGzsRutracker.avi",
-        "Size": "611 МБ"
+        "Size": 640679936
       },
       {
         "Name": "The.Rookie.S06E09.WEB-DLRip.RGzsRutracker.avi",
-        "Size": "614 МБ"
+        "Size": 643825664
       },
       {
         "Name": "The.Rookie.S06E10.WEB-DLRip.RGzsRutracker.avi",
-        "Size": "611 МБ"
+        "Size": 640679936
       }
     ]
   }
@@ -755,48 +768,48 @@ Quick check of provider availability:
     "Peers": "2",
     "Seed_Date": "14-08-2024 8:19:07 (1 минуту назад)",
     "Add_Date": "25-05-2024 14:55:05  (3 месяца назад)",
-    "Size": "18.33 GB (19685459294 Bytes)",
+    "Size": 19685459294,
     "Poster": "https://i123.fastpic.org/big/2024/0311/2f/5d19d67e60ba456eefdbbb59c5f4ce2f.png",
     "Files": [
       {
         "Name": "The.Rookie.S06.WEBDL.720p/The.Rookie.S06E01.WEBDL.720p.RGzsRutracker.mkv",
-        "Size": "2.03 GB"
+        "Size": 2179940352
       },
       {
         "Name": "The.Rookie.S06.WEBDL.720p/The.Rookie.S06E02.WEBDL.720p.RGzsRutracker.mkv",
-        "Size": "1.85 GB"
+        "Size": 1986422374
       },
       {
         "Name": "The.Rookie.S06.WEBDL.720p/The.Rookie.S06E03.WEBDL.720p.RGzsRutracker.mkv",
-        "Size": "1.87 GB"
+        "Size": 2007903437
       },
       {
         "Name": "The.Rookie.S06.WEBDL.720p/The.Rookie.S06E04.WEBDL.720p.RGzsRutracker.mkv",
-        "Size": "1.90 GB"
+        "Size": 2040109465
       },
       {
         "Name": "The.Rookie.S06.WEBDL.720p/The.Rookie.S06E05.WEBDL.720p.RGzsRutracker.mkv",
-        "Size": "1.67 GB"
+        "Size": 1793126498
       },
       {
         "Name": "The.Rookie.S06.WEBDL.720p/The.Rookie.S06E06.WEBDL.720p.RGzsRutracker.mkv",
-        "Size": "1.66 GB"
+        "Size": 1782386483
       },
       {
         "Name": "The.Rookie.S06.WEBDL.720p/The.Rookie.S06E07.WEBDL.720p.RGzsRutracker.mkv",
-        "Size": "2.06 GB"
+        "Size": 2212164198
       },
       {
         "Name": "The.Rookie.S06.WEBDL.720p/The.Rookie.S06E08.WEBDL.720p.RGzsRutracker.mkv",
-        "Size": "1.67 GB"
+        "Size": 1793126498
       },
       {
         "Name": "The.Rookie.S06.WEBDL.720p/The.Rookie.S06E09.WEBDL.720p.RGzsRutracker.mkv",
-        "Size": "1.74 GB"
+        "Size": 1868322529
       },
       {
         "Name": "The.Rookie.S06.WEBDL.720p/The.Rookie.S06E10.WEBDL.720p.RGzsRutracker.mkv",
-        "Size": "1.89 GB"
+        "Size": 2029369450
       }
     ]
   }
@@ -831,7 +844,7 @@ Quick check of provider availability:
     "Registration": "22 Апр 2019 12:09:12",
     "Rating": "4.6",
     "Votes": "59",
-    "Size": "51.2 GB",
+    "Size": 54975581389,
     "Poster": "https://nnmstatic.win/forum/image.php?link=https://b.radikal.ru/b11/1811/92/f4ed86b7965f.jpg",
     "Files": [
       {
@@ -840,83 +853,83 @@ Quick check of provider availability:
       },
       {
         "Name": "The.Rookie.S01E01.1080p.TVShows.mkv",
-        "Size": "2.42 GB"
+        "Size": 2598875914
       },
       {
         "Name": "The.Rookie.S01E02.1080p.TVShows.mkv",
-        "Size": "2.68 GB"
+        "Size": 2878062182
       },
       {
         "Name": "The.Rookie.S01E03.1080p.TVShows.mkv",
-        "Size": "2.61 GB"
+        "Size": 2802908856
       },
       {
         "Name": "The.Rookie.S01E04.1080p.TVShows.mkv",
-        "Size": "2.11 GB"
+        "Size": 2265922232
       },
       {
         "Name": "The.Rookie.S01E05.1080p.TVShows.mkv",
-        "Size": "2.16 GB"
+        "Size": 2319124889
       },
       {
         "Name": "The.Rookie.S01E06.1080p.TVShows.mkv",
-        "Size": "2.43 GB"
+        "Size": 2609615929
       },
       {
         "Name": "The.Rookie.S01E07.1080p.TVShows.mkv",
-        "Size": "2.23 GB"
+        "Size": 2394289561
       },
       {
         "Name": "The.Rookie.S01E08.1080p.TVShows.mkv",
-        "Size": "1.85 GB"
+        "Size": 1986422374
       },
       {
         "Name": "The.Rookie.S01E09.1080p.TVShows.mkv",
-        "Size": "2.03 GB"
+        "Size": 2179940352
       },
       {
         "Name": "The.Rookie.S01E10.1080p.TVShows.mkv",
-        "Size": "2.81 GB"
+        "Size": 3017624576
       },
       {
         "Name": "The.Rookie.S01E11.1080p.TVShows.mkv",
-        "Size": "3 GB"
+        "Size": 3221225472
       },
       {
         "Name": "The.Rookie.S01E12.1080p.TVShows.mkv",
-        "Size": "2.74 GB"
+        "Size": 2942470512
       },
       {
         "Name": "The.Rookie.S01E13.1080p.TVShows.mkv",
-        "Size": "2.88 GB"
+        "Size": 3092837801
       },
       {
         "Name": "The.Rookie.S01E14.1080p.TVShows.mkv",
-        "Size": "2.88 GB"
+        "Size": 3092837801
       },
       {
         "Name": "The.Rookie.S01E15.1080p.TVShows.mkv",
-        "Size": "2.68 GB"
+        "Size": 2878062182
       },
       {
         "Name": "The.Rookie.S01E16.1080p.TVShows.mkv",
-        "Size": "2.85 GB"
+        "Size": 3060621558
       },
       {
         "Name": "The.Rookie.S01E17.1080p.TVShows.mkv",
-        "Size": "2.68 GB"
+        "Size": 2878062182
       },
       {
         "Name": "The.Rookie.S01E18.1080p.TVShows.mkv",
-        "Size": "2.67 GB"
+        "Size": 2867322168
       },
       {
         "Name": "The.Rookie.S01E19.1080p.TVShows.mkv",
-        "Size": "2.76 GB"
+        "Size": 2963948527
       },
       {
         "Name": "The.Rookie.S01E20.1080p.TVShows.mkv",
-        "Size": "2.7 GB"
+        "Size": 2899102924
       }
     ]
   }
