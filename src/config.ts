@@ -34,6 +34,14 @@ const parsePositiveFloat = (value: string | undefined): number | undefined => {
   return parsed;
 };
 
+const parseProvidersList = (value: string | undefined): string[] | undefined => {
+  if (!value?.trim()) {
+    return undefined;
+  }
+  const providers = value.split(',').map((p) => p.trim().toLowerCase()).filter(Boolean);
+  return providers.length > 0 ? providers : undefined;
+};
+
 const resolveUserDbProvider = (): UserDbProvider => {
   const raw = process.env.USER_DB_PROVIDER?.toLowerCase().trim();
   if (!raw || raw === 'd1') {
@@ -84,6 +92,7 @@ export const loadConfig = (): Config => {
   const searchMaxSizeBytes =
     Number.isFinite(maxSizeGiB) && maxSizeGiB > 0 ? Math.floor(maxSizeGiB * 1024 * 1024 * 1024) : undefined;
   const searchRequestTimeoutMs = parsePositiveInt(process.env.SEARCH_REQUEST_TIMEOUT_MS) ?? DEFAULT_SEARCH_TIMEOUT_MS;
+  const searchProviders = parseProvidersList(process.env.SEARCH_PROVIDERS);
   const playerBaseUrl = process.env.PLAYER_BASE_URL;
   if (!playerBaseUrl) {
     throw new Error('PLAYER_BASE_URL is required');
@@ -125,6 +134,7 @@ export const loadConfig = (): Config => {
     searchRequestTimeoutMs,
     searchMinSizeBytes,
     searchMaxSizeBytes,
+    searchProviders,
     playerBaseUrl,
     userDbProvider,
     paymentProvider,

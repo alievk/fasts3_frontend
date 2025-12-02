@@ -10,9 +10,17 @@ const buildMaxSizeStage = (limit: number): SearchResultStage => {
   return (results) => results.filter((item) => !hasKnownSize(item.sizeBytes) || item.sizeBytes <= limit);
 };
 
+const buildProvidersStage = (allowed: Set<string>): SearchResultStage => {
+  return (results) => results.filter((item) => allowed.has(item.provider));
+};
+
 export const createSearchPipeline = (config: Config): SearchResultPipeline => {
   const stages: SearchResultPipeline = [];
-  const { searchMinSizeBytes, searchMaxSizeBytes } = config;
+  const { searchMinSizeBytes, searchMaxSizeBytes, searchProviders } = config;
+
+  if (searchProviders && searchProviders.length > 0) {
+    stages.push(buildProvidersStage(new Set(searchProviders)));
+  }
 
   if (Number.isFinite(searchMinSizeBytes) && (searchMinSizeBytes as number) > 0) {
     stages.push(buildMinSizeStage(searchMinSizeBytes as number));
