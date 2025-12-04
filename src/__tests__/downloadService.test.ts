@@ -60,6 +60,8 @@ const baseDetail = (overrides: Partial<SearchResultDetail> = {}): SearchResultDe
   hash: null,
   magnet: 'magnet:?xt=urn:btih:123',
   files: [],
+  seeders: 0,
+  leechers: 0,
   ...overrides
 });
 

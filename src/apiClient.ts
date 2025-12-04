@@ -220,7 +220,9 @@ class HttpApiClient implements ApiClient {
         sizeBytes: parseSizeBytes(rawRecord.Size ?? rawRecord.size),
         hash: hash || null,
         magnet,
-        files: parseFiles(rawRecord.Files ?? rawRecord.files)
+        files: parseFiles(rawRecord.Files ?? rawRecord.files),
+        seeders: parseInteger(rawRecord.Seeds ?? rawRecord.seeders),
+        leechers: parseInteger(rawRecord.Peers ?? rawRecord.leechers)
       };
     }
     return undefined;

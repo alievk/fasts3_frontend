@@ -697,9 +697,7 @@ const buildSearchPage = (results: SearchResult[], requestedPage: number, locale:
     const displayIndex = index + 1;
     return [
       `${displayIndex}. ${escapeHtml(result.title)}`,
-      escapeHtml(translate('search.providerLine', locale, { provider: result.providerLabel || result.provider })),
       escapeHtml(translate('search.sizeLine', locale, { size: formatSize(result.sizeBytes, locale) })),
-      escapeHtml(translate('search.peersLine', locale, { seeders: result.seeders, leechers: result.leechers })),
       formatDownloadLinkLine(encodeResultToken(result), locale)
     ].join('\n');
   });
@@ -762,12 +760,7 @@ const startDownloadFromToken = async (
     const hashValue = detail.hash ?? translate('common.unknown', locale);
     const displayTitle = detail.title ?? baseResult.title;
     const titleLine = `<b>${escapeHtml(displayTitle)}</b>`;
-    const providerLine = escapeHtml(
-      translate('search.detailProviderLine', locale, {
-        provider: baseResult.providerLabel || baseResult.provider
-      })
-    );
-    const effectiveSizeBytes = baseResult.sizeBytes;
+    const effectiveSizeBytes = detail.sizeBytes;
     const sizeLine = escapeHtml(
       translate('search.detailSizeLine', locale, { size: formatSize(effectiveSizeBytes, locale) })
     );
@@ -783,9 +776,17 @@ const startDownloadFromToken = async (
       const whyLabel = escapeHtml(translate('search.streamWhy', locale));
       streamLine += ` (<a href="${whyUrl}">${whyLabel}</a>)`;
     }
+    const providerLine = escapeHtml(
+      translate('search.detailProviderLine', locale, {
+        provider: baseResult.providerLabel || baseResult.provider
+      })
+    );
     const idLine = escapeHtml(translate('search.detailIdLine', locale, { id: baseResult.id }));
     const hashLine = escapeHtml(translate('search.detailHashLine', locale, { hash: hashValue }));
-    const detailLines = [titleLine, '', providerLine, idLine, hashLine, sizeLine, formatLine, streamLine];
+    const seedersLine = escapeHtml(translate('search.detailSeedersLine', locale, { seeders: detail.seeders }));
+    const leechersLine = escapeHtml(translate('search.detailLeechersLine', locale, { leechers: detail.leechers }));
+    const hiddenSection = `<tg-spoiler>${providerLine}\n${idLine}\n${hashLine}\n${seedersLine}\n${leechersLine}</tg-spoiler>`;
+    const detailLines = [titleLine, '', sizeLine, formatLine, streamLine, hiddenSection];
     const keyboard = buildDownloadConfirmationKeyboard(token, locale);
     await replyFn(detailLines.join('\n'), { ...keyboard, parse_mode: 'HTML' as const });
   } catch (error) {

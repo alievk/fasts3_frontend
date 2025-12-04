@@ -24,6 +24,8 @@ export interface SearchResultDetail {
   hash?: string | null;
   magnet: string;
   files: SearchResultFile[];
+  seeders: number;
+  leechers: number;
 }
 
 export type SearchResultStage = (results: SearchResult[]) => SearchResult[] | Promise<SearchResult[]>;

@@ -179,7 +179,9 @@ export class DownloadService extends EventEmitter {
       providerLabel: result.providerLabel,
       title: resolvedTitle,
       sizeBytes: resolvedSizeBytes,
-      hash: normalizedHash
+      hash: normalizedHash,
+      seeders: result.seeders,
+      leechers: result.leechers
     };
   }
 
