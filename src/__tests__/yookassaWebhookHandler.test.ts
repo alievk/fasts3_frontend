@@ -245,7 +245,7 @@ test('rolls back subscription for test endpoint', async () => {
   assert.notEqual(subscription, baseDate);
 
   const sent = stub.telegramMessages[0] as { text?: string } | undefined;
-  assert.ok(sent?.text?.startsWith('[test] Оплата получена'));
+  assert.ok(sent?.text?.startsWith('[test] <b>Оплата получена'));
   } finally {
     (global as any).fetch = originalFetch;
   }

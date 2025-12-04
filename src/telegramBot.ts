@@ -666,6 +666,9 @@ const resolveStreamability = (detail: SearchResultDetail, locale: string, fallba
   return { canStream, extensionValue, extensionDisplay };
 };
 
+const formatReadiness = (seeders: number): string =>
+  seeders <= 3 ? '▂' : seeders <= 10 ? '▂▃' : '▂▃▅';
+
 const formatDownloadLinkLine = (token: string, locale: string): string => {
   const payload = `${DETAIL_PAYLOAD_PREFIX}${token}`;
   const label = translate('search.downloadLinkLabel', locale);
@@ -698,6 +701,7 @@ const buildSearchPage = (results: SearchResult[], requestedPage: number, locale:
     return [
       `${displayIndex}. ${escapeHtml(result.title)}`,
       escapeHtml(translate('search.sizeLine', locale, { size: formatSize(result.sizeBytes, locale) })),
+      escapeHtml(translate('search.readinessLine', locale, { bars: formatReadiness(result.seeders) })),
       formatDownloadLinkLine(encodeResultToken(result), locale)
     ].join('\n');
   });
