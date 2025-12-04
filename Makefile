@@ -1,5 +1,6 @@
+PROJECT_NAME ?= fasts3-frontend
 PROFILE = prod
-COMPOSE = docker compose -f docker-compose.yml --profile $(PROFILE)
+COMPOSE = docker compose -p $(PROJECT_NAME) -f docker-compose.yml --profile $(PROFILE)
 
 SRC_DIR = src
 BUILD_STAMP = .make/npm-build.stamp
