@@ -699,7 +699,7 @@ const buildSearchPage = (results: SearchResult[], requestedPage: number, locale:
     const index = startIndex + offset;
     const displayIndex = index + 1;
     return [
-      `${displayIndex}. ${escapeHtml(result.title)}`,
+      `<b>${displayIndex}. ${escapeHtml(result.title)}</b>`,
       escapeHtml(translate('search.sizeLine', locale, { size: formatSize(result.sizeBytes, locale) })),
       escapeHtml(translate('search.readinessLine', locale, { bars: formatReadiness(result.seeders) })),
       formatDownloadLinkLine(encodeResultToken(result), locale)
