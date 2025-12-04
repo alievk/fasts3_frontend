@@ -79,48 +79,58 @@ type PaymentStore = {
   setDemoUsed: (telegramId: string, used: boolean, timestamp: string) => Promise<void>;
 };
 
-const chatLocales = new Map<number, string>();
-const chatProviders = new Map<number, string>();
-const getLocaleFlag = (locale: string): string => translate('locale.flag', locale);
-const cacheChatLocale = (chatId: number, locale: string | null | undefined): void => {
-  if (!locale || locale === defaultLocale) {
-    chatLocales.delete(chatId);
-    return;
-  }
-  chatLocales.set(chatId, locale);
+type SettingsCache<T extends string> = {
+  cache: (chatId: number, value: T | null | undefined) => void;
+  get: (chatId?: number) => T;
+  set: (chatId: number, value: T) => T;
 };
-const getChatLocale = (chatId?: number): string => {
-  if (chatId === undefined) {
-    return defaultLocale;
-  }
-  const stored = chatLocales.get(chatId);
-  return stored && isSupportedLocale(stored) ? stored : defaultLocale;
+
+const createSettingsCache = <T extends string>(
+  getDefault: () => T,
+  validate: (value: T) => boolean
+): SettingsCache<T> => {
+  const store = new Map<number, T>();
+  return {
+    cache: (chatId, value) => {
+      const def = getDefault();
+      if (!value || value === def) {
+        store.delete(chatId);
+        return;
+      }
+      store.set(chatId, value);
+    },
+    get: (chatId) => {
+      if (chatId === undefined) return getDefault();
+      const stored = store.get(chatId);
+      return stored && validate(stored) ? stored : getDefault();
+    },
+    set: (chatId, value) => {
+      const def = getDefault();
+      const normalized = validate(value) ? value : def;
+      if (normalized === def) {
+        store.delete(chatId);
+      } else {
+        store.set(chatId, normalized);
+      }
+      return normalized;
+    }
+  };
 };
-const setChatLocale = (chatId: number, locale: string): string => {
-  const normalized = isSupportedLocale(locale) ? locale : defaultLocale;
-  cacheChatLocale(chatId, normalized === defaultLocale ? null : normalized);
-  return normalized;
-};
+
 const getAvailableProviders = (): string[] => config.searchProviders ?? [];
 const getDefaultProvider = (): string => getAvailableProviders()[0] ?? 'RuTracker';
-const cacheChatProvider = (chatId: number, provider: string | null | undefined): void => {
-  const def = getDefaultProvider();
-  if (!provider || provider === def) {
-    chatProviders.delete(chatId);
-    return;
-  }
-  chatProviders.set(chatId, provider);
-};
-const getChatProvider = (chatId?: number): string => {
-  if (chatId === undefined) return getDefaultProvider();
-  return chatProviders.get(chatId) ?? getDefaultProvider();
-};
-const setChatProvider = (chatId: number, provider: string): string => {
-  const available = getOrderedProviders();
-  const normalized = available.includes(provider) ? provider : getDefaultProvider();
-  cacheChatProvider(chatId, normalized);
-  return normalized;
-};
+
+const localeCache = createSettingsCache(() => defaultLocale, isSupportedLocale);
+const providerCache = createSettingsCache(getDefaultProvider, (p) => getOrderedProviders().includes(p));
+
+const cacheChatLocale = localeCache.cache;
+const getChatLocale = localeCache.get;
+const setChatLocale = localeCache.set;
+const cacheChatProvider = providerCache.cache;
+const getChatProvider = providerCache.get;
+const setChatProvider = providerCache.set;
+
+const getLocaleFlag = (locale: string): string => translate('locale.flag', locale);
 const translateForChat = (chatId: number | undefined, key: string, params?: TranslationParams): string =>
   translate(key, getChatLocale(chatId), params);
 const translateDefault = (key: string, params?: TranslationParams): string => translate(key, defaultLocale, params);

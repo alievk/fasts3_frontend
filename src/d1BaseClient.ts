@@ -79,9 +79,9 @@ export abstract class D1BaseClient {
     return undefined;
   }
 
-  protected async ensureSubscriptionColumn(): Promise<void> {
+  protected async ensureColumn(table: string, column: string, definition: string): Promise<void> {
     try {
-      await this.execute('ALTER TABLE users ADD COLUMN subscription_expires_at TEXT');
+      await this.execute(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (!/duplicate column name/i.test(message)) {
@@ -90,15 +90,20 @@ export abstract class D1BaseClient {
     }
   }
 
-  protected async ensureDemoUsedColumn(): Promise<void> {
-    try {
-      await this.execute('ALTER TABLE users ADD COLUMN demo_used INTEGER DEFAULT 0');
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (!/duplicate column name/i.test(message)) {
-        throw error;
-      }
-    }
+  protected async ensureUserColumns(): Promise<void> {
+    await this.ensureColumn('users', 'subscription_expires_at', 'TEXT');
+    await this.ensureColumn('users', 'demo_used', 'INTEGER DEFAULT 0');
   }
+
+  protected static readonly USERS_TABLE_SQL = `
+    CREATE TABLE IF NOT EXISTS users (
+      telegram_id TEXT PRIMARY KEY,
+      locale TEXT,
+      subscription_expires_at TEXT,
+      demo_used INTEGER DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `.trim();
 }
 

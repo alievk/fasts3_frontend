@@ -185,16 +185,7 @@ export class D1PaymentStore extends D1BaseClient {
 
   private async initSchema(): Promise<void> {
     const statements = [
-      `
-      CREATE TABLE IF NOT EXISTS users (
-        telegram_id TEXT PRIMARY KEY,
-        locale TEXT,
-        subscription_expires_at TEXT,
-        demo_used INTEGER DEFAULT 0,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      )
-    `.trim(),
+      D1BaseClient.USERS_TABLE_SQL,
       `
       CREATE TABLE IF NOT EXISTS plans (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -226,8 +217,7 @@ export class D1PaymentStore extends D1BaseClient {
     for (const sql of statements) {
       await this.execute(sql);
     }
-    await this.ensureSubscriptionColumn();
-    await this.ensureDemoUsedColumn();
+    await this.ensureUserColumns();
   }
 
   async getChatLocale(telegramId: string): Promise<string | null> {

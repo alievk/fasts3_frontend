@@ -219,16 +219,7 @@ export class D1ChatRegistry extends D1BaseClient implements ChatRegistry {
 
   private async initSchema(): Promise<void> {
     const statements = [
-      `
-      CREATE TABLE IF NOT EXISTS users (
-        telegram_id TEXT PRIMARY KEY,
-        locale TEXT,
-        subscription_expires_at TEXT,
-        demo_used INTEGER DEFAULT 0,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      )
-    `.trim(),
+      D1BaseClient.USERS_TABLE_SQL,
       `
       CREATE TABLE IF NOT EXISTS jobs (
         job_id TEXT PRIMARY KEY,
@@ -256,26 +247,9 @@ export class D1ChatRegistry extends D1BaseClient implements ChatRegistry {
     for (const sql of statements) {
       await this.execute(sql);
     }
-    await this.ensureSubscriptionColumn();
-    await this.ensureDemoUsedColumn();
-    await this.ensureWeeklyQuotaColumn();
-    await this.ensureProviderColumn();
-  }
-
-  private async ensureWeeklyQuotaColumn(): Promise<void> {
-    try {
-      await this.execute('ALTER TABLE users ADD COLUMN weekly_quota_gb REAL');
-    } catch {
-      // Column already exists
-    }
-  }
-
-  private async ensureProviderColumn(): Promise<void> {
-    try {
-      await this.execute('ALTER TABLE users ADD COLUMN provider TEXT');
-    } catch {
-      // Column already exists
-    }
+    await this.ensureUserColumns();
+    await this.ensureColumn('users', 'weekly_quota_gb', 'REAL');
+    await this.ensureColumn('users', 'provider', 'TEXT');
   }
 
   private async saveJob(job: OwnedJob): Promise<void> {

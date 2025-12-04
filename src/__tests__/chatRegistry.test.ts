@@ -119,11 +119,7 @@ const createD1FetchStub = () => {
       return response([]);
     }
 
-    if (normalized.startsWith('alter table users add column subscription_expires_at')) {
-      return response([]);
-    }
-
-    if (normalized.startsWith('alter table users add column demo_used')) {
+    if (normalized.startsWith('alter table users add column')) {
       return response([]);
     }
 
