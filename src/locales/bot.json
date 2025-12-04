@@ -38,7 +38,11 @@
     "search.nextPage": "Далее →",
     "search.pageCounter": "Страница {current}/{total}",
     "search.cantFindLinkLabel": "Не могу найти видео",
-    "search.cantFindHint": "Попробуй уточнить запрос: добавь несколько ключевых слов, которые точнее описывают нужное видео.",
+    "search.cantFindHint": [
+      "Если не можешь найти нужное видео, попробуй эти приёмы:\n",
+      "✅ Уточни запрос: добавь несколько ключевых слов, которые точнее описывают нужное видео. Например, \"начало нолан 2010\"\n",
+      "✅ Выбери другого провайдера в настройках: /settings"
+    ],
     "search.detailProviderLine": "Провайдер: {provider}",
     "search.detailIdLine": "ID: {id}",
     "search.detailSizeLine": "Размер: {size}",
