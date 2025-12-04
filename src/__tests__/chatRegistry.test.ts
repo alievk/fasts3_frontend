@@ -30,6 +30,7 @@ const buildConfig = (provider: 'd1'): Config => ({
   searchRequestTimeoutMs: 1000,
   searchMinSizeBytes: undefined,
   searchMaxSizeBytes: undefined,
+  searchMinSeeders: undefined,
   playerBaseUrl: 'http://localhost/player',
   userDbProvider: provider,
   d1AccountId: provider === 'd1' ? 'acc' : undefined,

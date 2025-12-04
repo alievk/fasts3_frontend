@@ -85,6 +85,7 @@ export interface Config {
   searchRequestTimeoutMs: number;
   searchMinSizeBytes?: number;
   searchMaxSizeBytes?: number;
+  searchMinSeeders?: number;
   searchProviders?: string[];
   playerBaseUrl: string;
   userDbProvider: UserDbProvider;

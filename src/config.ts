@@ -23,6 +23,17 @@ const parsePositiveInt = (value: string | undefined): number | undefined => {
   return parsed;
 };
 
+const parseNonNegativeInt = (value: string | undefined): number | undefined => {
+  if (value === undefined) {
+    return undefined;
+  }
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return undefined;
+  }
+  return parsed;
+};
+
 const parsePositiveFloat = (value: string | undefined): number | undefined => {
   if (value === undefined) {
     return undefined;
@@ -92,6 +103,7 @@ export const loadConfig = (): Config => {
   const searchMaxSizeBytes =
     Number.isFinite(maxSizeGiB) && maxSizeGiB > 0 ? Math.floor(maxSizeGiB * 1024 * 1024 * 1024) : undefined;
   const searchRequestTimeoutMs = parsePositiveInt(process.env.SEARCH_REQUEST_TIMEOUT_MS) ?? DEFAULT_SEARCH_TIMEOUT_MS;
+  const searchMinSeeders = parseNonNegativeInt(process.env.SEARCH_MIN_SEEDERS);
   const searchProviders = parseProvidersList(process.env.SEARCH_PROVIDERS);
   const playerBaseUrl = process.env.PLAYER_BASE_URL;
   if (!playerBaseUrl) {
@@ -134,6 +146,7 @@ export const loadConfig = (): Config => {
     searchRequestTimeoutMs,
     searchMinSizeBytes,
     searchMaxSizeBytes,
+    searchMinSeeders,
     searchProviders,
     playerBaseUrl,
     userDbProvider,

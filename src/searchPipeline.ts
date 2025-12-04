@@ -3,11 +3,15 @@ import { Config, SearchResultStage, SearchResultPipeline } from './types.js';
 const hasKnownSize = (value: number | null | undefined): value is number => typeof value === 'number' && Number.isFinite(value);
 
 const buildMinSizeStage = (limit: number): SearchResultStage => {
-  return (results) => results.filter((item) => !hasKnownSize(item.sizeBytes) || item.sizeBytes >= limit);
+  return (results) => results.filter((item) => hasKnownSize(item.sizeBytes) && item.sizeBytes >= limit);
 };
 
 const buildMaxSizeStage = (limit: number): SearchResultStage => {
-  return (results) => results.filter((item) => !hasKnownSize(item.sizeBytes) || item.sizeBytes <= limit);
+  return (results) => results.filter((item) => hasKnownSize(item.sizeBytes) && item.sizeBytes <= limit);
+};
+
+const buildMinSeedersStage = (limit: number): SearchResultStage => {
+  return (results) => results.filter((item) => Number.isFinite(item.seeders) && item.seeders >= limit);
 };
 
 const buildProvidersStage = (allowed: Set<string>): SearchResultStage => {
@@ -16,7 +20,7 @@ const buildProvidersStage = (allowed: Set<string>): SearchResultStage => {
 
 export const createSearchPipeline = (config: Config): SearchResultPipeline => {
   const stages: SearchResultPipeline = [];
-  const { searchMinSizeBytes, searchMaxSizeBytes, searchProviders } = config;
+  const { searchMinSizeBytes, searchMaxSizeBytes, searchMinSeeders, searchProviders } = config;
 
   if (searchProviders && searchProviders.length > 0) {
     stages.push(buildProvidersStage(new Set(searchProviders)));
@@ -28,6 +32,10 @@ export const createSearchPipeline = (config: Config): SearchResultPipeline => {
 
   if (Number.isFinite(searchMaxSizeBytes) && (searchMaxSizeBytes as number) > 0) {
     stages.push(buildMaxSizeStage(searchMaxSizeBytes as number));
+  }
+
+  if (Number.isFinite(searchMinSeeders) && (searchMinSeeders as number) >= 0) {
+    stages.push(buildMinSeedersStage(searchMinSeeders as number));
   }
 
   return stages;

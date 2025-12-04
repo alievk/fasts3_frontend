@@ -15,6 +15,7 @@ const createTestConfig = (): Config => ({
   searchRequestTimeoutMs: 1000,
   searchMinSizeBytes: undefined,
   searchMaxSizeBytes: undefined,
+  searchMinSeeders: undefined,
   playerBaseUrl: 'http://localhost/player',
   userDbProvider: 'd1',
   d1AccountId: 'test-acc',
