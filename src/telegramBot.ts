@@ -177,7 +177,6 @@ const buildStartContent = (locale: string) => {
 };
 
 const SUBSCRIPTION_PAYLOAD_PREFIX = 'subscription:';
-const SUBSCRIPTION_START_PREFIX = 'sub_';
 const DEMO_ACTIVATE_PAYLOAD = 'demo:activate';
 
 const formatPlanPrice = (price: number, locale: string): string => {
@@ -239,11 +238,6 @@ const buildSubscriptionKeyboard = (plans: PaymentPlan[], locale: string, demoPla
   return Markup.inlineKeyboard(buttons, { columns: 1 });
 };
 
-const buildDemoOfferKeyboard = (demoPlan: PaymentPlan, locale: string) => {
-  const demoLabel = translate('subscription.demoButton', locale, { days: demoPlan.durationDays });
-  return Markup.inlineKeyboard([Markup.button.callback(demoLabel, DEMO_ACTIVATE_PAYLOAD)], { columns: 1 });
-};
-
 const sendStartMessage = async (
   chatId: number,
   replyFn?: (text: string, extra?: SendMessageExtra) => Promise<unknown>
@@ -282,7 +276,7 @@ const getBotCommands = (locale: string) => [
   { command: 'search', description: translate('commands.searchDescription', locale) },
   { command: 'jobs', description: translate('commands.jobsDescription', locale) },
   { command: 'limit', description: translate('commands.limitDescription', locale) },
-  { command: 'subscription', description: translate('commands.subscriptionDescription', locale) },
+  { command: 'donate', description: translate('commands.donateDescription', locale) },
   { command: 'help', description: translate('commands.helpDescription', locale) },
   { command: 'settings', description: translate('commands.settingsDescription', locale) }
 ];
@@ -998,14 +992,6 @@ export const createTelegramBot = (
       await ctx.reply(translateForChat(chatId, 'search.cantFindHint'), withDisabledPreview());
       return;
     }
-    if (payload?.startsWith(SUBSCRIPTION_START_PREFIX)) {
-      const rawPlanId = payload.slice(SUBSCRIPTION_START_PREFIX.length);
-      const planId = Number.parseInt(rawPlanId, 10);
-      if (!Number.isNaN(planId)) {
-        await handleSubscriptionPlan(chatId, planId);
-        return;
-      }
-    }
     const jobPayload = parseJobPayload(payload);
     if (jobPayload) {
       const telegramId = await ensureTelegramChat(chatId);
@@ -1045,7 +1031,7 @@ export const createTelegramBot = (
     await ctx.reply(text, withDisabledPreview({ parse_mode: 'HTML' as const }));
   });
 
-  bot.command('subscription', async (ctx) => {
+  bot.command('donate', async (ctx) => {
     const chatId = getPrivateChatId(ctx);
     if (chatId === undefined) {
       return;
@@ -1054,19 +1040,6 @@ export const createTelegramBot = (
     const telegramId = await ensureTelegramChat(chatId);
     const expiresAt = await paymentStore.getSubscriptionExpiresAt(telegramId);
     const isActive = expiresAt && new Date(expiresAt) > new Date();
-    let statusLine: string;
-    if (isActive) {
-      const dateLocale = locale === 'ru' ? 'ru-RU' : 'en-US';
-      const formatted = new Date(expiresAt).toLocaleDateString(dateLocale, {
-        day: 'numeric',
-        month: 'long',
-        year: 'numeric',
-        timeZone: config.timezone
-      });
-      statusLine = translate('subscription.expiresAt', locale, { date: formatted });
-    } else {
-      statusLine = translate('subscription.noActive', locale);
-    }
     const isAdmin = config.telegramAdminId !== undefined && chatId === config.telegramAdminId;
     let plans: PaymentPlan[] = [];
     try {
@@ -1086,7 +1059,7 @@ export const createTelegramBot = (
       }
     }
     const keyboard = buildSubscriptionKeyboard(plans, locale, demoPlan);
-    const text = `${statusLine}\n\n${translateForChat(chatId, 'subscription.messageHtml')}`;
+    const text = translateForChat(chatId, 'donate.messageHtml');
     await ctx.reply(text, withDisabledPreview({ ...keyboard, parse_mode: 'HTML' as const }));
   });
 
@@ -1107,7 +1080,21 @@ export const createTelegramBot = (
       const refreshInDays = Math.max(1, Math.ceil(QUOTA_WINDOW_DAYS - (Date.now() - oldest.getTime()) / (24 * 60 * 60 * 1000)));
       lines.push(translate('limit.refreshIn', locale, { days: refreshInDays }));
     }
-    await ctx.reply(lines.join('\n'), withDisabledPreview());
+    const expiresAt = await paymentStore.getSubscriptionExpiresAt(telegramId);
+    const isActive = expiresAt && new Date(expiresAt) > new Date();
+    if (isActive) {
+      const dateLocale = locale === 'ru' ? 'ru-RU' : 'en-US';
+      const formatted = new Date(expiresAt).toLocaleDateString(dateLocale, {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+        timeZone: config.timezone
+      });
+      lines.push('', translate('subscription.expiresAt', locale, { date: formatted }));
+    } else {
+      lines.push('', translate('subscription.noActive', locale));
+    }
+    await ctx.reply(lines.join('\n'), withDisabledPreview({ parse_mode: 'HTML' as const }));
   });
 
   bot.command('how_download_phone', async (ctx) => {
@@ -1360,6 +1347,13 @@ export const createTelegramBot = (
     }
     const telegramId = await ensureTelegramChat(chatId);
     if (!(await isSubscriptionActive(telegramId))) {
+      const isAdmin = config.telegramAdminId !== undefined && chatId === config.telegramAdminId;
+      let plans: PaymentPlan[] = [];
+      try {
+        plans = isAdmin ? await paymentStore.listAllPlans() : await paymentStore.listVisiblePlans();
+      } catch (error) {
+        console.error('Failed to load subscription plans:', error);
+      }
       let demoPlan: PaymentPlan | undefined;
       if (config.demoPlanId) {
         const demoUsed = await paymentStore.getDemoUsed(telegramId);
@@ -1367,12 +1361,8 @@ export const createTelegramBot = (
           demoPlan = await paymentStore.getPlan(config.demoPlanId);
         }
       }
-      if (demoPlan) {
-        const keyboard = buildDemoOfferKeyboard(demoPlan, locale);
-        await ctx.reply(translate('subscription.demoOffer', locale), withDisabledPreview({ ...keyboard }));
-      } else {
-        await ctx.reply(translate('subscription.expired', locale), withDisabledPreview());
-      }
+      const keyboard = plans.length > 0 ? buildSubscriptionKeyboard(plans, locale, demoPlan) : undefined;
+      await ctx.reply(translate('donate.messageHtml', locale), withDisabledPreview({ ...keyboard, parse_mode: 'HTML' as const }));
       return;
     }
     try {
