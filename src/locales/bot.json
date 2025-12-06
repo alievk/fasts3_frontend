@@ -58,6 +58,9 @@
     "search.detailUnavailable": "Не удалось получить детали для видео ({provider}: {id}).",
     "search.detailFailed": "Не удалось получить детали: {message}",
     "faq.messageHtml": [
+      "<b>- 🔗 Актуальная ссылка</b>\n",
+      "- /link\n",
+      "\n",
       "<b>- Для просмотра и скачивания в России нужен VPN?</b>\n",
       "- Нет, не нужен.\n",
       "\n",
@@ -73,7 +76,7 @@
       "<b>- Как стримить через AirPlay?</b>\n",
       "- /how_stream_airplay\n",
       "\n",
-      "- Остались вопросы?\n",
+      "<b>- Остались вопросы?</b>\n",
       "- Пиши @numpy_as_np\n",
       "\n",
       "<a href=\"https://www.vibelab.build/fast_s3/tos\">Условия</a> ",
@@ -83,7 +86,8 @@
       "Привет, я бот для поиска и скачивания видео 📺\n\n",
       "{howItWorks}\n\n",
       "{advantages}\n\n",
-      "Помощь: /help"
+      "🔗 Сохрани актуальную ссылку: /link\n",
+      "🙋‍♀️ Помощь: /help"
     ],
     "help.messageHtml": "{faq}",
     "subscription.noPlans": "Тарифы временно недоступны. Попробуй позже.",
@@ -159,6 +163,15 @@
     "locale.selfName": "Русский",
     "locale.flag": "🇷🇺",
     "commands.settingsDescription": "Настройки",
+    "commands.linkDescription": "Актуальная ссылка",
+    "link.message1": [
+      "Из-за особенностей работы <b>fast.s3</b> доступ к сервису в любой момент может быть заблокирован.\n\n",
+      "Перешлите это сообщение в «Избранное», чтобы не потерять актуальную ссылку на бота:"
+    ],
+    "link.message2": [
+      "<b>⚡️fast.s3 — Телеграм-бот для скачивания видео с торрент площадок</b>\n\n",
+      "Актуальная ссылка на бота 👉 <a href=\"https://www.vibelab.build/fast_s3\">вот</a>"
+    ],
     "settings.title": "<b>Настройки</b>",
     "settings.language": "Язык",
     "settings.provider": "Провайдер"
@@ -171,6 +184,9 @@
     "donate.messageHtml": "We want to build a useful service that's a pleasure to use.\n\n\n\nFor just the price of two cups of coffee ☕️☕️ you'll get access to the bot for three whole months, and we'll be very grateful: after all, nothing motivates a developer to keep working like the sound of a coin in their pocket 🪙\n\n✍️ Subscription allows you to download new videos.\n\n🙆‍♂️ When your subscription expires, you can still download and watch previously uploaded videos.\n\n🙋‍♀️ Questions? Contact @numpy_as_np",
     "commands.limitDescription": "Download limit",
     "commands.settingsDescription": "Settings",
+    "commands.linkDescription": "Bot link",
+    "link.message1": "fast.s3 operates under certain restrictions, so it may be blocked at any time.\n\nForward the message below to your Saved Messages to keep the current bot link:",
+    "link.message2": "⚡️fast.s3 — Telegram bot for downloading videos from torrent sites\n\nCurrent bot link: https://www.vibelab.build/fast_s3",
     "common.unknown": "unknown",
     "common.yes": "yes",
     "common.no": "no",

@@ -288,7 +288,8 @@ const getBotCommands = (locale: string) => [
   { command: 'limit', description: translate('commands.limitDescription', locale) },
   { command: 'donate', description: translate('commands.donateDescription', locale) },
   { command: 'help', description: translate('commands.helpDescription', locale) },
-  { command: 'settings', description: translate('commands.settingsDescription', locale) }
+  { command: 'settings', description: translate('commands.settingsDescription', locale) },
+  { command: 'link', description: translate('commands.linkDescription', locale) }
 ];
 
 const activeChats = new Set<number>();
@@ -1140,6 +1141,21 @@ export const createTelegramBot = (
       return;
     }
     await sendOrUpdateSettings(chatId);
+  });
+
+  bot.command('link', async (ctx) => {
+    const chatId = getPrivateChatId(ctx);
+    if (chatId === undefined) {
+      return;
+    }
+    await ctx.reply(
+      translateForChat(chatId, 'link.message1'),
+      withDisabledPreview({ parse_mode: 'HTML' as const })
+    );
+    await ctx.reply(
+      translateForChat(chatId, 'link.message2'),
+      withDisabledPreview({ parse_mode: 'HTML' as const })
+    );
   });
 
   bot.command('search', async (ctx) => {
