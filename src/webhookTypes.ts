@@ -3,6 +3,7 @@ export type WebhookContext = {
   path: string;
   body: unknown;
   headers: Record<string, unknown>;
+  rawBody?: string;
 };
 
 export type WebhookValidator = {

@@ -1,5 +1,5 @@
 PROJECT_NAME ?= fasts3-frontend
-PROFILE = prod
+PROFILE ?= prod
 COMPOSE = docker compose -p $(PROJECT_NAME) -f docker-compose.yml --profile $(PROFILE)
 
 SRC_DIR = src

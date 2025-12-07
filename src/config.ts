@@ -11,6 +11,8 @@ const DEFAULT_PAGE_SIZE = 5;
 const DEFAULT_MIN_SIZE_GIB = 0;
 const DEFAULT_MAX_SIZE_GIB = Number.POSITIVE_INFINITY;
 const DEFAULT_SEARCH_TIMEOUT_MS = 10000;
+const DEFAULT_WATA_API_BASE = 'https://api.wata.pro/api/h2h';
+const DEFAULT_WATA_SANDBOX_API_BASE = 'https://api-sandbox.wata.pro/api/h2h';
 
 const parsePositiveInt = (value: string | undefined): number | undefined => {
   if (value === undefined) {
@@ -66,6 +68,9 @@ const resolvePaymentProvider = (): PaymentProvider => {
   if (!raw || raw === 'yookassa') {
     return 'yookassa';
   }
+  if (raw === 'wata') {
+    return 'wata';
+  }
   throw new Error(`Unsupported PAYMENT_PROVIDER: ${raw}`);
 };
 
@@ -119,10 +124,16 @@ export const loadConfig = (): Config => {
   const yookassaShopId = process.env.YOOKASSA_SHOP_ID;
   const yookassaSecretKey = process.env.YOOKASSA_SECRET_KEY;
   const yookassaReceiptEmail = process.env.YOOKASSA_RECEIPT_EMAIL?.trim();
+  const wataAccessToken = process.env.WATA_ACCESS_TOKEN?.trim();
+  const wataApiBase = process.env.WATA_API_BASE?.trim() || DEFAULT_WATA_API_BASE;
+  const wataSandboxApiBase = process.env.WATA_SANDBOX_API_BASE?.trim() || DEFAULT_WATA_SANDBOX_API_BASE;
   if (paymentProvider === 'yookassa') {
     if (!yookassaShopId || !yookassaSecretKey) {
       throw new Error('YOOKASSA_SHOP_ID and YOOKASSA_SECRET_KEY are required for Yookassa provider');
     }
+  }
+  if (paymentProvider === 'wata' && !wataAccessToken) {
+    throw new Error('WATA_ACCESS_TOKEN is required for Wata provider');
   }
   const d1AccountId = process.env.CLOUDFLARE_ACCOUNT_ID;
   const d1DatabaseId = process.env.CLOUDFLARE_D1_DATABASE_ID;
@@ -154,6 +165,9 @@ export const loadConfig = (): Config => {
     yookassaShopId,
     yookassaSecretKey,
     yookassaReceiptEmail,
+    wataAccessToken,
+    wataApiBase,
+    wataSandboxApiBase,
     d1AccountId,
     d1DatabaseId,
     d1ApiToken,

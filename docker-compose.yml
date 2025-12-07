@@ -19,9 +19,10 @@ services:
     environment:
       TZ: ${TZ:-UTC}
       TELEGRAM_BOT_TOKEN: 8569009509:AAEjzCtTRFu4T8aoLTspuWt-V3KNS6z2Aks
+      PAYMENT_PROVIDER: wata
       YOOKASSA_SHOP_ID: 1214381
       YOOKASSA_SECRET_KEY: test_X-3w_lJo83DP96hpbmt72BFTn3NecGb1K23cudq-9QU
-      YOOKASSA_RECEIPT_EMAIL: ${YOOKASSA_RECEIPT_EMAIL:-}
+      WATA_ACCESS_TOKEN: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJQdWJsaWNJZCI6IjNhMWUwMDc3LWI5NWItMmJjMy1lNzFmLWIwNWQ2YmIyN2Q3ZSIsIlRva2VuVmVyc2lvbiI6IjEiLCJleHAiOjE3OTY2MzYwNjgsImlzcyI6Imh0dHBzOi8vYXBpLndhdGEucHJvIiwiYXVkIjoiaHR0cHM6Ly9hcGkud2F0YS5wcm8vYXBpL2gyaCJ9.W4K7xGeGzfveQrJpkInb38T_TTzCuQvcuqt3YBmLSoY
     volumes:
       - .:/app
       - telegram_bot_node_modules:/app/node_modules

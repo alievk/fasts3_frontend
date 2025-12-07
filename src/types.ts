@@ -98,6 +98,9 @@ export interface Config {
   yookassaShopId?: string;
   yookassaSecretKey?: string;
   yookassaReceiptEmail?: string;
+  wataAccessToken?: string;
+  wataApiBase?: string;
+  wataSandboxApiBase?: string;
   botLocale: string;
   botTranslationsBundle: BotTranslationsBundle;
   demoPlanId?: number;
@@ -106,7 +109,7 @@ export interface Config {
 }
 
 export type UserDbProvider = 'd1';
-export type PaymentProvider = 'yookassa';
+export type PaymentProvider = 'yookassa' | 'wata';
 
 export type BotTranslations = Record<string, Record<string, string | string[]>>;
 

@@ -3,7 +3,7 @@ import EventEmitter from 'node:events';
 import { test } from 'node:test';
 import { createTelegramBot } from '../telegramBot.js';
 import { MemoryChatRegistry } from '../memoryChatRegistry.js';
-import type { Config, OwnedJob } from '../types.js';
+import type { Config, OwnedJob, PaymentPlan } from '../types.js';
 
 const createTestConfig = (): Config => ({
   apiBaseUrl: 'http://localhost:8000/api',
@@ -213,4 +213,96 @@ test('job completion notifies owner only once', async () => {
     1,
     'expected exactly one notification for completed job'
   );
+});
+
+test('wata payments include order id and set external id', async () => {
+  const config = createTestConfig();
+  config.paymentProvider = 'wata';
+  config.wataAccessToken = 'token';
+  config.wataApiBase = 'https://api.wata.pro/api/h2h';
+  process.env.PLAYER_BASE_URL = config.playerBaseUrl;
+  const plan: PaymentPlan = {
+    id: 1,
+    labelKey: 'subscription.testPlan',
+    price: 250,
+    durationDays: 30,
+    oldPrice: null,
+    display: true
+  };
+  let externalId: string | null = null;
+  const paymentCalls: unknown[] = [];
+  const paymentStore = {
+    getPlan: async (id: number) => (id === plan.id ? plan : undefined),
+    findPendingOrder: async () => undefined,
+    createOrder: async ({ userId, planId, amount, provider }: any) => ({
+      id: 42,
+      userId,
+      planId,
+      amount,
+      provider,
+      externalId: null,
+      status: 'pending',
+      createdAt: '2030-01-01T00:00:00.000Z',
+      paidAt: null
+    }),
+    setOrderExternalId: async (_id: number, linkId: string) => {
+      externalId = linkId;
+    }
+  };
+  const paymentClient = {
+    createPayment: async (input: unknown) => {
+      paymentCalls.push(input);
+      return { id: 'link-42', confirmationUrl: 'https://pay/link-42' };
+    }
+  };
+  const downloadService = new StubDownloadService();
+  const poller = { start(): void {}, stop(): void {} } as const;
+  const runtime = createTelegramBot('test-token', config, {
+    downloadService: downloadService as any,
+    poller: poller as any,
+    apiClient: {} as any,
+    chatRegistry: new MemoryChatRegistry(),
+    paymentStore: paymentStore as any,
+    paymentClient: paymentClient as any
+  });
+  const sentMessages: { chatId: number; text: string; replyMarkup?: unknown }[] = [];
+  (runtime.bot.telegram as any).sendMessage = async (chatId: number, text: string, extra?: { reply_markup?: unknown }) => {
+    sentMessages.push({ chatId, text, replyMarkup: extra?.reply_markup });
+    return { message_id: Date.now() };
+  };
+  (runtime.bot.telegram as any).deleteMessage = async () => ({});
+  (runtime.bot.telegram as any).editMessageText = async () => ({});
+  (runtime.bot.telegram as any).answerCbQuery = async () => ({});
+  (runtime.bot.telegram as any).getMe = async () => ({
+    id: 1,
+    is_bot: true,
+    first_name: 'TestBot',
+    username: 'test_bot'
+  });
+  (runtime.bot.telegram as any).setMyCommands = async () => ({});
+  (runtime.bot as any).launch = async () => {};
+
+  await runtime.start();
+  await runtime.bot.handleUpdate({
+    update_id: 99,
+    callback_query: {
+      id: 'cbq-1',
+      from: { id: 77, is_bot: false, first_name: 'User' },
+      message: {
+        message_id: 1,
+        date: Math.floor(Date.now() / 1000),
+        chat: { id: 77, type: 'private', first_name: 'User' }
+      },
+      data: 'subscription:1'
+    }
+  } as any);
+
+  const call = paymentCalls[0] as { description?: string } | undefined;
+  assert.ok(call, 'expected payment call');
+  assert.ok(call?.description?.toString().includes('#42'), 'expected order id in description');
+  assert.equal(externalId, 'link-42');
+  const markup = sentMessages.find(({ chatId }) => chatId === 77)?.replyMarkup as
+    | { inline_keyboard?: unknown[] }
+    | undefined;
+  assert.ok(markup, 'expected payment message with keyboard');
 });
