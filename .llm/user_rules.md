@@ -1,6 +1,11 @@
-CURRENT STAGE: DEVELOPMENT
+CURRENT STAGE: PRODUCTION
 
 # Stage rules
+## Production
+- There are real users
+- New code should work for old data or migration provided
+- Strict security rules, no 123 access tokens etc.
+
 ## Development
 - No backward compatibility code
 - No DB/configs migration code
@@ -49,7 +54,7 @@ Instead, keep to the following plan:
 3. Once we polished the plan together, I will give you permission to make code edits and then you go and implement selected plan.
 Proceed with the first plan you proposed if I don't specify it.
 When I tell GO!, proceed with the following without further user prompt:
- - create a detailed todo checklist in .llm/todo_{short_task_tile}.md
+ - create a detailed todo checklist in .todo/{short_task_tile}.md
  - implement tasks from the created todo checklist step-by-step
 
 # User (Me) is Smarter Than AI (You)

@@ -4,6 +4,7 @@ dist/
 node_modules/
 .cache/
 .llm/todo_*
+.todo
 .make
 .env
 public/player/runtime-config.js
