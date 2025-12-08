@@ -83,6 +83,10 @@ const buildFetchStub = (plan: FakePlanRow) => {
       return response([]);
     }
 
+    if (normalized.startsWith('alter table users add column source')) {
+      return response([]);
+    }
+
     if (normalized.startsWith('select * from plans where id')) {
       const [id] = params as [number];
       const row = plans.get(Number(id));

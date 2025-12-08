@@ -124,16 +124,38 @@ const createD1FetchStub = () => {
     }
 
     if (normalized.startsWith('insert into users')) {
-      const [telegramId, locale, createdAt, updatedAt] = params as [string, string | null, string, string];
-      const existing = users.get(telegramId);
-      const next: FakeUserRow = {
-        telegram_id: telegramId,
-        locale: existing?.locale ?? locale ?? null,
-        created_at: existing?.created_at ?? createdAt,
-        updated_at: updatedAt
-      };
-      users.set(telegramId, next);
-      return response([]);
+      if (params.length === 4) {
+        const [telegramId, locale, createdAt, updatedAt] = params as [string, string | null, string, string];
+        const existing = users.get(telegramId);
+        const next: FakeUserRow = {
+          telegram_id: telegramId,
+          locale: existing?.locale ?? locale ?? null,
+          created_at: existing?.created_at ?? createdAt,
+          updated_at: updatedAt
+        };
+        users.set(telegramId, next);
+        return response([]);
+      }
+      if (params.length === 6) {
+        const [telegramId, locale, _weeklyQuotaGb, _source, createdAt, updatedAt] = params as [
+          string,
+          string | null,
+          number | null,
+          string | null,
+          string,
+          string
+        ];
+        const existing = users.get(telegramId);
+        const next: FakeUserRow = {
+          telegram_id: telegramId,
+          locale: existing?.locale ?? locale ?? null,
+          created_at: existing?.created_at ?? createdAt,
+          updated_at: updatedAt
+        };
+        users.set(telegramId, next);
+        return response([]);
+      }
+      throw new Error(`Unexpected params for insert into users: ${JSON.stringify(params)}`);
     }
 
     if (normalized.startsWith('select * from users')) {

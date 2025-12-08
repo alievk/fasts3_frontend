@@ -93,12 +93,14 @@ export abstract class D1BaseClient {
   protected async ensureUserColumns(): Promise<void> {
     await this.ensureColumn('users', 'subscription_expires_at', 'TEXT');
     await this.ensureColumn('users', 'demo_used', 'INTEGER DEFAULT 0');
+    await this.ensureColumn('users', 'source', 'TEXT');
   }
 
   protected static readonly USERS_TABLE_SQL = `
     CREATE TABLE IF NOT EXISTS users (
       telegram_id TEXT PRIMARY KEY,
       locale TEXT,
+      source TEXT,
       subscription_expires_at TEXT,
       demo_used INTEGER DEFAULT 0,
       created_at TEXT NOT NULL,

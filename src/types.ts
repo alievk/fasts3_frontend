@@ -129,6 +129,7 @@ export interface ChatRecord {
   createdAt: string;
   updatedAt: string;
   locale?: string | null;
+  source?: string | null;
 }
 
 export interface OwnedJob extends StoredJob {
@@ -141,7 +142,7 @@ export interface ChatNotificationTarget {
 }
 
 export interface ChatRegistry {
-  registerChat(telegramId: string): Promise<ChatRecord>;
+  registerChat(telegramId: string, source?: string | null): Promise<ChatRecord>;
   listJobs(telegramId: string): Promise<OwnedJob[]>;
   listAllJobs(): Promise<OwnedJob[]>;
   getJob(jobId: string): Promise<OwnedJob | undefined>;

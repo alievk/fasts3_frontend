@@ -12,7 +12,7 @@ export class MemoryChatRegistry implements ChatRegistry {
   private downloads: DownloadRecord[] = [];
   private quotas = new Map<string, number | null>();
 
-  async registerChat(telegramId: string): Promise<ChatRecord> {
+  async registerChat(telegramId: string, _source?: string | null): Promise<ChatRecord> {
     const existing = this.chats.get(telegramId);
     const record: ChatRecord = {
       telegramId,

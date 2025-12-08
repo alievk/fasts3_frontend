@@ -7,6 +7,7 @@ type UserRow = {
   updated_at: string;
   locale: string | null;
   provider: string | null;
+  source: string | null;
   subscription_expires_at?: string | null;
   demo_used?: number | null;
   weekly_quota_gb?: number | null;
@@ -27,7 +28,8 @@ const toChatRecord = (row: UserRow): ChatRecord => ({
   telegramId: row.telegram_id,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
-  locale: row.locale ?? null
+  locale: row.locale ?? null,
+  source: row.source ?? null
 });
 
 export class D1ChatRegistry extends D1BaseClient implements ChatRegistry {
@@ -47,18 +49,31 @@ export class D1ChatRegistry extends D1BaseClient implements ChatRegistry {
     this.ready = this.initSchema();
   }
 
-  async registerChat(telegramId: string): Promise<ChatRecord> {
+  async registerChat(telegramId: string, source?: string | null): Promise<ChatRecord> {
     await this.ready;
     const timestamp = new Date().toISOString();
-    await this.execute(
-      `
-      INSERT INTO users (telegram_id, locale, weekly_quota_gb, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?)
-      ON CONFLICT(telegram_id) DO UPDATE SET
-        updated_at = excluded.updated_at
-    `.trim(),
-      [telegramId, null, this.defaultWeeklyQuotaGb ?? null, timestamp, timestamp]
-    );
+    if (source === undefined) {
+      await this.execute(
+        `
+        INSERT INTO users (telegram_id, locale, weekly_quota_gb, source, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(telegram_id) DO UPDATE SET
+          updated_at = excluded.updated_at
+      `.trim(),
+        [telegramId, null, this.defaultWeeklyQuotaGb ?? null, null, timestamp, timestamp]
+      );
+    } else {
+      await this.execute(
+        `
+        INSERT INTO users (telegram_id, locale, weekly_quota_gb, source, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(telegram_id) DO UPDATE SET
+          updated_at = excluded.updated_at,
+          source = excluded.source
+      `.trim(),
+        [telegramId, null, this.defaultWeeklyQuotaGb ?? null, source, timestamp, timestamp]
+      );
+    }
     const row = await this.getUserRow(telegramId);
     if (!row) {
       throw new Error(`Failed to load user ${telegramId} after upsert`);

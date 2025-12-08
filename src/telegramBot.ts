@@ -356,9 +356,19 @@ const removalSuppressions = new Map<string, string>();
 const paymentMessages = new Map<number, number>();
 const settingsMessages = new Map<number, number>();
 
-const ensureTelegramChat = async (chatId: number): Promise<string> => {
+const SOURCE_PAYLOAD_PREFIX = 'source_';
+
+const extractSourceFromStartPayload = (payload?: string | null): string | undefined => {
+  if (!payload || !payload.startsWith(SOURCE_PAYLOAD_PREFIX)) {
+    return undefined;
+  }
+  const raw = payload.slice(SOURCE_PAYLOAD_PREFIX.length).trim();
+  return raw || undefined;
+};
+
+const ensureTelegramChat = async (chatId: number, source?: string | null): Promise<string> => {
   const telegramId = String(chatId);
-  const record = await chatRegistry.registerChat(telegramId);
+  const record = await chatRegistry.registerChat(telegramId, source);
   cacheChatLocale(chatId, record.locale ?? null);
   const provider = await chatRegistry.getChatProvider(telegramId);
   cacheChatProvider(chatId, provider);
@@ -1029,6 +1039,10 @@ export const createTelegramBot = (
       return;
     }
     const payload = normalizeStartPayload(ctx.startPayload);
+    const source = extractSourceFromStartPayload(payload);
+    if (source !== undefined) {
+      await ensureTelegramChat(chatId, source);
+    }
     await handleStartPayload(chatId, payload, ctx);
   });
 
